@@ -12,7 +12,8 @@ const state = {
   currentTimeline: [],
   mapReady: false,
   map: null,
-  popup: null
+  popup: null,
+  lastFittedDate: null
 };
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
@@ -26,7 +27,9 @@ function initMap() {
     container: "map",
     style: "mapbox://styles/mapbox/dark-v11",
     center: [121.0, 25.0],
-    zoom: 11
+    zoom: 11,
+    pitch: 60,
+    bearing: -32
   });
 
   state.popup = new mapboxgl.Popup({
@@ -35,27 +38,26 @@ function initMap() {
   });
 
   state.map.on("load", () => {
-    state.mapReady = true;
+    state.map.addSource("mapbox-dem", {
+      type: "raster-dem",
+      url: "mapbox://mapbox.mapbox-terrain-dem-v1"
+    });
+    state.map.setTerrain({ source: "mapbox-dem", exaggeration: 1.2 });
+    state.map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.6 });
+
     state.map.addSource("stations", {
       type: "geojson",
       data: emptyGeoJSON()
     });
 
     state.map.addLayer({
-      id: "stations-circles",
-      type: "circle",
+      id: "stations-extrusion",
+      type: "fill-extrusion",
       source: "stations",
       paint: {
-        "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["get", "available"],
-          0, 4,
-          10, 9,
-          20, 13,
-          35, 18
-        ],
-        "circle-color": [
+        "fill-extrusion-height": ["*", ["get", "available"], 6],
+        "fill-extrusion-base": 0,
+        "fill-extrusion-color": [
           "interpolate",
           ["linear"],
           ["get", "available"],
@@ -63,9 +65,8 @@ function initMap() {
           10, "#fbbf24",
           20, "#22c55e"
         ],
-        "circle-opacity": 0.85,
-        "circle-stroke-color": "#0f172a",
-        "circle-stroke-width": 1
+        "fill-extrusion-opacity": 0.82,
+        "fill-extrusion-vertical-gradient": true
       }
     });
 
@@ -75,8 +76,9 @@ function initMap() {
       source: "stations",
       layout: {
         "text-field": ["get", "available"],
-        "text-size": 11,
+        "text-size": 12,
         "text-font": ["DIN Pro Medium", "Arial Unicode MS Bold"],
+        "symbol-placement": "point",
         "text-offset": [0, 1.2]
       },
       paint: {
@@ -86,16 +88,15 @@ function initMap() {
       }
     });
 
-    state.map.on("mousemove", "stations-circles", e => {
+    state.map.on("mousemove", "stations-extrusion", e => {
       const feature = e.features?.[0];
       if (!feature) {
         state.popup.remove();
         return;
       }
-      const { coordinates } = feature.geometry;
-      const { station, district, address, available, capacity } = feature.properties;
+      const { station, district, address, available, capacity, centerLng, centerLat } = feature.properties;
       state.popup
-        .setLngLat(coordinates)
+        .setLngLat([centerLng, centerLat])
         .setHTML(`
           <div class="tooltip">
             <div class="tooltip__title">${station}</div>
@@ -107,7 +108,7 @@ function initMap() {
         .addTo(state.map);
     });
 
-    state.map.on("mouseleave", "stations-circles", () => state.popup.remove());
+    state.map.on("mouseleave", "stations-extrusion", () => state.popup.remove());
 
     tryRenderCurrentSlot();
   });
@@ -202,18 +203,18 @@ function parseCsv(text, date) {
         });
       }
       const available = Number.isFinite(value) ? value : 0;
+      const geometry = createExtrusionPolygon(lng, lat, 60);
       featuresBySlot.get(slotKey).push({
         type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [lng, lat]
-        },
+        geometry,
         properties: {
           station: row[columnIndex.sna] ?? row[columnIndex.sno] ?? "未知站點",
           district: row[columnIndex.sarea] ?? "",
           address: row[columnIndex.ar] ?? "",
           capacity: Number(row[columnIndex.tot]) || 0,
-          available
+          available,
+          centerLng: lng,
+          centerLat: lat
         }
       });
     }
@@ -230,6 +231,23 @@ function parseCsv(text, date) {
       features: featuresBySlot.get(slot.key) ?? []
     }
   }));
+}
+
+function createExtrusionPolygon(lng, lat, sizeMeters = 60) {
+  const latOffset = sizeMeters / 111320;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  const lngOffset = sizeMeters / (111320 * Math.max(cosLat, 0.01));
+  const ring = [
+    [lng - lngOffset, lat - latOffset],
+    [lng + lngOffset, lat - latOffset],
+    [lng + lngOffset, lat + latOffset],
+    [lng - lngOffset, lat + latOffset],
+    [lng - lngOffset, lat - latOffset]
+  ];
+  return {
+    type: "Polygon",
+    coordinates: [ring]
+  };
 }
 
 function groupEntriesByDate(entries) {
@@ -289,7 +307,7 @@ sliderEl.addEventListener("input", () => {
 });
 
 function renderSlot(entry) {
-  if (!state.mapReady) {
+  if (!state.mapReady && !state.map?.isStyleLoaded()) {
     return;
   }
   const source = state.map.getSource("stations");
@@ -305,6 +323,7 @@ function renderSlot(entry) {
 }
 
 function tryRenderCurrentSlot() {
+  state.mapReady = true;
   const entry = state.currentTimeline[Number(sliderEl.value)] ?? state.currentTimeline[0];
   if (entry) {
     renderSlot(entry);
@@ -316,11 +335,36 @@ function fitMapToFeatures(geojson) {
     return;
   }
   const bounds = geojson.features.reduce((acc, feature) => {
-    const [lng, lat] = feature.geometry.coordinates;
-    acc.extend([lng, lat]);
+    extendBoundsWithGeometry(acc, feature.geometry);
     return acc;
   }, new mapboxgl.LngLatBounds());
-  state.map.fitBounds(bounds, { padding: 60, maxZoom: 15 });
+
+  if (!bounds.isEmpty()) {
+    state.map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 });
+  }
+}
+
+function extendBoundsWithGeometry(bounds, geometry) {
+  if (!geometry) {
+    return;
+  }
+  if (geometry.type === "Point") {
+    bounds.extend(geometry.coordinates);
+  } else if (geometry.type === "Polygon") {
+    for (const ring of geometry.coordinates) {
+      for (const coord of ring) {
+        bounds.extend(coord);
+      }
+    }
+  } else if (geometry.type === "MultiPolygon") {
+    for (const polygon of geometry.coordinates) {
+      for (const ring of polygon) {
+        for (const coord of ring) {
+          bounds.extend(coord);
+        }
+      }
+    }
+  }
 }
 
 function emptyGeoJSON() {
@@ -329,7 +373,3 @@ function emptyGeoJSON() {
 
 initMap();
 loadData();
-
-
-
-
