@@ -92,7 +92,8 @@ const state = {
   heightScale: DEFAULT_HEIGHT_SCALE,
   autoplayIntervalMs: DEFAULT_AUTOPLAY_INTERVAL_MS,
   currentMode: DEFAULT_MODE,
-  viewMode: DEFAULT_VIEW_MODE
+  viewMode: DEFAULT_VIEW_MODE,
+  labelsVisible: true
 };
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
@@ -120,6 +121,14 @@ if (viewToggleEl) {
     state.viewMode = state.viewMode === "3d" ? "2d" : "3d";
     updateViewToggleButton();
     applyViewModeSettings();
+  });
+}
+
+if (labelToggleEl) {
+  labelToggleEl.addEventListener("click", () => {
+    state.labelsVisible = !state.labelsVisible;
+    updateLabelToggleButton();
+    applyLabelVisibility();
   });
 }
 
@@ -166,11 +175,12 @@ updateAutoplaySpeedLabel(state.autoplayIntervalMs / 1000);
 updateLegendLabels();
 updatePlayButtonState();
 updateViewToggleButton();
+updateLabelToggleButton();
 
 function initMap() {
   state.map = new mapboxgl.Map({
     container: "map",
-    style: "mapbox://styles/mapbox/dark-v11",
+    style: "mapbox://styles/mapbox/light-v11",
     center: [121.0, 25.0],
     zoom: 11,
     pitch: 60,
@@ -216,6 +226,64 @@ function initMap() {
     });
 
     state.map.addLayer({
+      id: "stations-heatmap-negative",
+      type: "heatmap",
+      source: "stations-2d",
+      layout: {
+        visibility: "none"
+      },
+      paint: {
+        "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 20, 14, 45],
+        "heatmap-intensity": 0.6,
+        "heatmap-weight": [
+          "case",
+          ["<", ["get", "value"], 0],
+          ["min", 1, ["/", ["abs", ["get", "value"]], 20]],
+          0
+        ],
+        "heatmap-color": [
+          "interpolate",
+          ["linear"],
+          ["heatmap-density"],
+          0, "rgba(248,113,113,0)",
+          0.4, "rgba(248,113,113,0.4)",
+          0.7, "rgba(239,68,68,0.65)",
+          1, "rgba(190,18,60,0.9)"
+        ],
+        "heatmap-opacity": 0.0
+      }
+    });
+
+    state.map.addLayer({
+      id: "stations-heatmap-positive",
+      type: "heatmap",
+      source: "stations-2d",
+      layout: {
+        visibility: "none"
+      },
+      paint: {
+        "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 20, 14, 45],
+        "heatmap-intensity": 0.6,
+        "heatmap-weight": [
+          "case",
+          [">", ["get", "value"], 0],
+          ["min", 1, ["/", ["abs", ["get", "value"]], 20]],
+          0
+        ],
+        "heatmap-color": [
+          "interpolate",
+          ["linear"],
+          ["heatmap-density"],
+          0, "rgba(134,239,172,0)",
+          0.4, "rgba(74,222,128,0.35)",
+          0.7, "rgba(34,197,94,0.6)",
+          1, "rgba(21,128,61,0.85)"
+        ],
+        "heatmap-opacity": 0.0
+      }
+    });
+
+    state.map.addLayer({
       id: "stations-circle",
       type: "circle",
       source: "stations-2d",
@@ -243,8 +311,8 @@ function initMap() {
         "text-offset": [0, 0.6]
       },
       paint: {
-        "text-color": "#e2e8f0",
-        "text-halo-color": "#0f172a",
+        "text-color": "#0f172a",
+        "text-halo-color": "rgba(255,255,255,0.85)",
         "text-halo-width": 1.2
       }
     });
@@ -293,6 +361,8 @@ function initMap() {
 
     applyExtrusionStyle();
     applyViewModeSettings({ animate: false });
+    applyLabelVisibility();
+    updateHeatmapVisibility();
     refreshCurrentView();
   });
 }
@@ -613,30 +683,17 @@ function applyExtrusionStyle() {
   const map = state.map;
   if (map.getLayer("stations-extrusion")) {
     const valueExpr = ["get", "value"];
-    const scaledExpr = ["*", valueExpr, state.heightScale];
-    const heightExpr = config.supportsNegative
-      ? [
-          "case",
-          [">=", valueExpr, 0],
-          scaledExpr,
-          0
-        ]
-      : scaledExpr;
-    const baseExpr = config.supportsNegative
-      ? [
-          "case",
-          [">=", valueExpr, 0],
-          0,
-          ["*", ["abs", valueExpr], state.heightScale]
-        ]
-      : 0;
+    const magnitudeExpr = config.supportsNegative ? ["abs", valueExpr] : valueExpr;
+    const heightExpr = ["*", magnitudeExpr, state.heightScale];
 
     map.setPaintProperty("stations-extrusion", "fill-extrusion-height", heightExpr);
-    map.setPaintProperty("stations-extrusion", "fill-extrusion-base", baseExpr);
+    map.setPaintProperty("stations-extrusion", "fill-extrusion-base", 0);
     map.setPaintProperty("stations-extrusion", "fill-extrusion-color", config.colorExpression);
   }
 
   applyCircleStyle(config);
+  applyHeatmapStyle(config);
+  updateHeatmapVisibility();
 }
 
 function applyCircleStyle(config) {
@@ -661,6 +718,65 @@ function applyCircleStyle(config) {
   map.setPaintProperty("stations-circle", "circle-opacity", 0.85);
   map.setPaintProperty("stations-circle", "circle-stroke-color", "#0f172a");
   map.setPaintProperty("stations-circle", "circle-stroke-width", 1);
+}
+
+function applyHeatmapStyle(config) {
+  if (!state.mapReady) {
+    return;
+  }
+  const map = state.map;
+  if (!map.getLayer("stations-heatmap-negative") || !map.getLayer("stations-heatmap-positive")) {
+    return;
+  }
+  const magnitudeExpr = ["abs", ["get", "value"]];
+  const weightExpr = ["min", 1, ["/", magnitudeExpr, 20]];
+
+  map.setPaintProperty("stations-heatmap-negative", "heatmap-weight", [
+    "case",
+    ["<", ["get", "value"], 0],
+    weightExpr,
+    0
+  ]);
+  map.setPaintProperty("stations-heatmap-positive", "heatmap-weight", [
+    "case",
+    [">", ["get", "value"], 0],
+    weightExpr,
+    0
+  ]);
+}
+
+function updateHeatmapVisibility() {
+  if (!state.mapReady) {
+    return;
+  }
+  const shouldShow = state.currentMode === "delta" || state.currentMode === "cumulative";
+  const visibility = shouldShow ? "visible" : "none";
+  const opacity = shouldShow ? 0.55 : 0;
+
+  if (state.map.getLayer("stations-heatmap-negative")) {
+    state.map.setLayoutProperty("stations-heatmap-negative", "visibility", visibility);
+    state.map.setPaintProperty("stations-heatmap-negative", "heatmap-opacity", opacity);
+  }
+  if (state.map.getLayer("stations-heatmap-positive")) {
+    state.map.setLayoutProperty("stations-heatmap-positive", "visibility", visibility);
+    state.map.setPaintProperty("stations-heatmap-positive", "heatmap-opacity", opacity);
+  }
+}
+
+function applyLabelVisibility() {
+  if (!state.mapReady || !state.map.getLayer("stations-labels")) {
+    return;
+  }
+  const visibility = state.labelsVisible ? "visible" : "none";
+  state.map.setLayoutProperty("stations-labels", "visibility", visibility);
+}
+
+function updateLabelToggleButton() {
+  if (!labelToggleEl) {
+    return;
+  }
+  labelToggleEl.textContent = state.labelsVisible ? "隱藏數字" : "顯示數字";
+  labelToggleEl.setAttribute("aria-pressed", state.labelsVisible ? "true" : "false");
 }
 
 function applyViewModeSettings({ animate = true } = {}) {
@@ -820,4 +936,3 @@ function emptyGeoJSON() {
 
 initMap();
 loadData();
-
