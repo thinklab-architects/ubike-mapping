@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YouBike 站點時序地圖</title>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app__header">
+      <h1>YouBike 時間軸地圖</h1>
+      <p>拖曳時間軸查看各時段的車輛數量。CSV 檔案放在 <code>csv/</code> 資料夾並更新 <code>manifest.json</code> 即可加入新的日期。</p>
+    </header>
+    <main class="app__main">
+      <div id="map" aria-label="YouBike 地圖"></div>
+      <div class="timeline" id="timeline">
+        <div class="timeline__label" id="timeline-label">載入資料中…</div>
+        <input type="range" id="time-slider" min="0" max="0" value="0" step="1" disabled>
+        <div class="timeline__meta">
+          <select id="date-select" aria-label="選擇日期"></select>
+          <div class="legend">
+            <span class="legend__dot legend__dot--low"></span> 低車量
+            <span class="legend__dot legend__dot--mid"></span> 中等
+            <span class="legend__dot legend__dot--high"></span> 高車量
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="main.js" type="module"></script>
+</body>
+</html>
