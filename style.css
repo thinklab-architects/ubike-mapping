@@ -215,3 +215,27 @@ code {
 .legend__text {
   color: #cbd5f5;
 }
+
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #cbd5f5;
+  font-size: 0.95rem;
+}
+
+#autoplay-speed {
+  width: 160px;
+  accent-color: #f97316;
+}
+
+#autoplay-speed-value {
+  min-width: 3rem;
+  font-weight: 600;
+  text-align: right;
+  color: #f8fafc;
+}
+
+#view-toggle {
+  min-width: 6.5rem;
+}

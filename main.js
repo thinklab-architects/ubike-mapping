@@ -5,16 +5,21 @@ const sliderEl = document.getElementById("time-slider");
 const labelEl = document.getElementById("timeline-label");
 const dateSelectEl = document.getElementById("date-select");
 const playButtonEl = document.getElementById("play-toggle");
+const viewToggleEl = document.getElementById("view-toggle");
 const heightScaleEl = document.getElementById("height-scale");
 const heightScaleValueEl = document.getElementById("height-scale-value");
+const speedSliderEl = document.getElementById("autoplay-speed");
+const speedValueEl = document.getElementById("autoplay-speed-value");
 const modeSelectEl = document.getElementById("mode-select");
 const legendLabelLow = document.getElementById("legend-label-low");
 const legendLabelMid = document.getElementById("legend-label-mid");
 const legendLabelHigh = document.getElementById("legend-label-high");
 
-const AUTOPLAY_INTERVAL = 1500;
 const DEFAULT_HEIGHT_SCALE = Number(heightScaleEl?.value) || 6;
+const DEFAULT_AUTOPLAY_SECONDS = Number(speedSliderEl?.value) || 1.5;
+const DEFAULT_AUTOPLAY_INTERVAL_MS = DEFAULT_AUTOPLAY_SECONDS * 1000;
 const DEFAULT_MODE = modeSelectEl?.value || "raw";
+const DEFAULT_VIEW_MODE = "3d";
 
 const MODE_CONFIGS = {
   raw: {
@@ -85,7 +90,9 @@ const state = {
   autoplayActive: false,
   autoplayHandle: null,
   heightScale: DEFAULT_HEIGHT_SCALE,
-  currentMode: DEFAULT_MODE
+  autoplayIntervalMs: DEFAULT_AUTOPLAY_INTERVAL_MS,
+  currentMode: DEFAULT_MODE,
+  viewMode: DEFAULT_VIEW_MODE
 };
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
@@ -108,6 +115,14 @@ if (playButtonEl) {
   });
 }
 
+if (viewToggleEl) {
+  viewToggleEl.addEventListener("click", () => {
+    state.viewMode = state.viewMode === "3d" ? "2d" : "3d";
+    updateViewToggleButton();
+    applyViewModeSettings();
+  });
+}
+
 if (heightScaleEl) {
   heightScaleEl.addEventListener("input", () => {
     const value = Number(heightScaleEl.value);
@@ -117,6 +132,18 @@ if (heightScaleEl) {
     state.heightScale = value;
     updateHeightScaleLabel(value);
     applyExtrusionStyle();
+  });
+}
+
+if (speedSliderEl) {
+  speedSliderEl.addEventListener("input", () => {
+    const seconds = Number(speedSliderEl.value);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return;
+    }
+    state.autoplayIntervalMs = seconds * 1000;
+    updateAutoplaySpeedLabel(seconds);
+    rescheduleAutoplay();
   });
 }
 
@@ -135,8 +162,10 @@ if (modeSelectEl) {
 }
 
 updateHeightScaleLabel(state.heightScale);
+updateAutoplaySpeedLabel(state.autoplayIntervalMs / 1000);
 updateLegendLabels();
 updatePlayButtonState();
+updateViewToggleButton();
 
 function initMap() {
   state.map = new mapboxgl.Map({
@@ -163,7 +192,12 @@ function initMap() {
     state.map.setTerrain({ source: "mapbox-dem", exaggeration: 1.2 });
     state.map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.6 });
 
-    state.map.addSource("stations", {
+    state.map.addSource("stations-3d", {
+      type: "geojson",
+      data: emptyGeoJSON()
+    });
+
+    state.map.addSource("stations-2d", {
       type: "geojson",
       data: emptyGeoJSON()
     });
@@ -171,7 +205,7 @@ function initMap() {
     state.map.addLayer({
       id: "stations-extrusion",
       type: "fill-extrusion",
-      source: "stations",
+      source: "stations-3d",
       paint: {
         "fill-extrusion-height": 0,
         "fill-extrusion-base": 0,
@@ -182,15 +216,31 @@ function initMap() {
     });
 
     state.map.addLayer({
+      id: "stations-circle",
+      type: "circle",
+      source: "stations-2d",
+      layout: {
+        visibility: "none"
+      },
+      paint: {
+        "circle-radius": 4,
+        "circle-color": "#38bdf8",
+        "circle-opacity": 0.85,
+        "circle-stroke-color": "#0f172a",
+        "circle-stroke-width": 1
+      }
+    });
+
+    state.map.addLayer({
       id: "stations-labels",
       type: "symbol",
-      source: "stations",
+      source: "stations-2d",
       layout: {
         "text-field": ["get", "labelValue"],
         "text-size": 12,
         "text-font": ["DIN Pro Medium", "Arial Unicode MS Bold"],
         "symbol-placement": "point",
-        "text-offset": [0, 1.2]
+        "text-offset": [0, 0.6]
       },
       paint: {
         "text-color": "#e2e8f0",
@@ -199,44 +249,50 @@ function initMap() {
       }
     });
 
-    state.map.on("mousemove", "stations-extrusion", e => {
-      const feature = e.features?.[0];
-      if (!feature) {
-        state.popup.remove();
-        return;
-      }
-      const {
-        station,
-        district,
-        address,
-        available,
-        delta,
-        cumulative,
-        metricLabel,
-        valueDisplay,
-        centerLng,
-        centerLat
-      } = feature.properties;
+    const hoverLayers = ["stations-extrusion", "stations-circle"];
+    hoverLayers.forEach(layerId => {
+      state.map.on("mousemove", layerId, e => {
+        const feature = e.features?.[0];
+        if (!feature) {
+          state.popup.remove();
+          return;
+        }
+        const {
+          station,
+          district,
+          address,
+          available,
+          delta,
+          cumulative,
+          metricLabel,
+          valueDisplay,
+          centerLng,
+          centerLat
+        } = feature.properties;
 
-      state.popup
-        .setLngLat([centerLng, centerLat])
-        .setHTML(`
-          <div class="tooltip">
-            <div class="tooltip__title">${station}</div>
-            <div>${district}</div>
-            <div>${address}</div>
-            <div>${metricLabel}：${valueDisplay}</div>
-            <div>即時車量：${formatNumber(available)}</div>
-            <div>十分鐘變化：${formatSignedNumber(delta)}</div>
-            <div>當日累積：${formatSignedNumber(cumulative)}</div>
-          </div>
-        `)
-        .addTo(state.map);
+        state.popup
+          .setLngLat([Number(centerLng), Number(centerLat)])
+          .setHTML(`
+            <div class="tooltip">
+              <div class="tooltip__title">${station}</div>
+              <div>${district}</div>
+              <div>${address}</div>
+              <div>${metricLabel}：${valueDisplay}</div>
+              <div>即時車量：${formatNumber(available)}</div>
+              <div>十分鐘變化：${formatSignedNumber(delta)}</div>
+              <div>當日累積：${formatSignedNumber(cumulative)}</div>
+            </div>
+          `)
+          .addTo(state.map);
+      });
     });
 
-    state.map.on("mouseleave", "stations-extrusion", () => state.popup.remove());
+    hoverLayers.forEach(layerId => {
+      state.map.on("mouseleave", layerId, () => state.popup.remove());
+    });
 
     applyExtrusionStyle();
+    applyViewModeSettings({ animate: false });
     refreshCurrentView();
   });
 }
@@ -329,9 +385,8 @@ function parseCsv(text, date) {
     let cumulativeChange = 0;
 
     for (let i = 0; i < timeColumns.length; i += 1) {
-      const timeLabel = timeColumns[i];
-      const raw = Number(row[timeStartIndex + i]);
-      const available = Number.isFinite(raw) ? raw : 0;
+      const rawValue = Number(row[timeStartIndex + i]);
+      const available = Number.isFinite(rawValue) ? rawValue : 0;
       const delta = previousValue === null ? 0 : available - previousValue;
       cumulativeChange += delta;
 
@@ -345,7 +400,7 @@ function parseCsv(text, date) {
         available,
         delta,
         cumulative: cumulativeChange,
-        geometry: createExtrusionPolygon(lng, lat, 60)
+        polygon: createExtrusionPolygon(lng, lat, 40)
       });
 
       previousValue = available;
@@ -435,33 +490,41 @@ function renderSlot(entry) {
   if (!state.mapReady || !state.map?.isStyleLoaded()) {
     return;
   }
-  const source = state.map.getSource("stations");
-  if (!source) {
+  const source3d = state.map.getSource("stations-3d");
+  const source2d = state.map.getSource("stations-2d");
+  if (!source3d || !source2d) {
     return;
   }
-  const geojson = getGeoJSONForEntry(entry, state.currentMode);
-  source.setData(geojson);
+  const polygons = getGeoJSONForEntry(entry, state.currentMode, "polygon");
+  const points = getGeoJSONForEntry(entry, state.currentMode, "point");
+  source3d.setData(polygons);
+  source2d.setData(points);
   labelEl.textContent = entry.label;
   if (state.lastFittedDate !== entry.date) {
-    fitMapToFeatures(geojson);
+    fitMapToFeatures(polygons);
     state.lastFittedDate = entry.date;
   }
 }
 
-function getGeoJSONForEntry(entry, mode) {
-  if (!entry.geojsonCache.has(mode)) {
-    entry.geojsonCache.set(mode, buildGeoJSON(entry, mode));
+function getGeoJSONForEntry(entry, mode, geometryType) {
+  const key = `${mode}:${geometryType}`;
+  if (!entry.geojsonCache.has(key)) {
+    entry.geojsonCache.set(key, buildGeoJSON(entry, mode, geometryType));
   }
-  return entry.geojsonCache.get(mode);
+  return entry.geojsonCache.get(key);
 }
 
-function buildGeoJSON(entry, mode) {
+function buildGeoJSON(entry, mode, geometryType) {
   const config = MODE_CONFIGS[mode] ?? MODE_CONFIGS.raw;
   const features = entry.stations.map(station => {
     const value = getMetricValue(station, mode);
+    const geometry = geometryType === "polygon"
+      ? station.polygon
+      : { type: "Point", coordinates: [station.lng, station.lat] };
+
     return {
       type: "Feature",
-      geometry: station.geometry,
+      geometry,
       properties: {
         station: station.station,
         district: station.district,
@@ -543,37 +606,88 @@ function extendBoundsWithGeometry(bounds, geometry) {
 }
 
 function applyExtrusionStyle() {
-  if (!state.mapReady || !state.map?.getLayer("stations-extrusion")) {
+  if (!state.mapReady) {
     return;
   }
   const config = MODE_CONFIGS[state.currentMode] ?? MODE_CONFIGS.raw;
-  const valueExpr = ["get", "value"];
-  const scaledExpr = ["*", valueExpr, state.heightScale];
-  const heightExpr = config.supportsNegative
-    ? [
-        "case",
-        [">=", valueExpr, 0],
-        scaledExpr,
-        0
-      ]
-    : scaledExpr;
-  const baseExpr = config.supportsNegative
-    ? [
-        "case",
-        [">=", valueExpr, 0],
-        0,
-        scaledExpr
-      ]
-    : 0;
+  const map = state.map;
+  if (map.getLayer("stations-extrusion")) {
+    const valueExpr = ["get", "value"];
+    const scaledExpr = ["*", valueExpr, state.heightScale];
+    const heightExpr = config.supportsNegative
+      ? [
+          "case",
+          [">=", valueExpr, 0],
+          scaledExpr,
+          0
+        ]
+      : scaledExpr;
+    const baseExpr = config.supportsNegative
+      ? [
+          "case",
+          [">=", valueExpr, 0],
+          0,
+          ["*", ["abs", valueExpr], state.heightScale]
+        ]
+      : 0;
 
-  state.map.setPaintProperty("stations-extrusion", "fill-extrusion-height", heightExpr);
-  state.map.setPaintProperty("stations-extrusion", "fill-extrusion-base", baseExpr);
-  state.map.setPaintProperty("stations-extrusion", "fill-extrusion-color", config.colorExpression);
+    map.setPaintProperty("stations-extrusion", "fill-extrusion-height", heightExpr);
+    map.setPaintProperty("stations-extrusion", "fill-extrusion-base", baseExpr);
+    map.setPaintProperty("stations-extrusion", "fill-extrusion-color", config.colorExpression);
+  }
+
+  applyCircleStyle(config);
 }
 
-function updateHeightScaleLabel(value) {
-  if (heightScaleValueEl) {
-    heightScaleValueEl.textContent = `${value}×`;
+function applyCircleStyle(config) {
+  if (!state.mapReady) {
+    return;
+  }
+  const map = state.map;
+  if (!map.getLayer("stations-circle")) {
+    return;
+  }
+  const valueExpr = ["abs", ["get", "value"]];
+  const baseScale = Math.max(state.heightScale / 6, 0.8);
+  const radiusExpr = [
+    "case",
+    ["<=", valueExpr, 0],
+    2,
+    ["min", 80, ["*", ["sqrt", valueExpr], baseScale]]
+  ];
+
+  map.setPaintProperty("stations-circle", "circle-radius", radiusExpr);
+  map.setPaintProperty("stations-circle", "circle-color", config.colorExpression);
+  map.setPaintProperty("stations-circle", "circle-opacity", 0.85);
+  map.setPaintProperty("stations-circle", "circle-stroke-color", "#0f172a");
+  map.setPaintProperty("stations-circle", "circle-stroke-width", 1);
+}
+
+function applyViewModeSettings({ animate = true } = {}) {
+  if (!state.mapReady) {
+    return;
+  }
+  const is3D = state.viewMode === "3d";
+  const extrudeVisibility = is3D ? "visible" : "none";
+  const circleVisibility = is3D ? "none" : "visible";
+
+  if (state.map.getLayer("stations-extrusion")) {
+    state.map.setLayoutProperty("stations-extrusion", "visibility", extrudeVisibility);
+  }
+  if (state.map.getLayer("stations-circle")) {
+    state.map.setLayoutProperty("stations-circle", "visibility", circleVisibility);
+  }
+  if (state.map.getLayer("stations-labels")) {
+    state.map.setLayoutProperty("stations-labels", "text-offset", is3D ? [0, 1.2] : [0, 0.6]);
+  }
+
+  const pitch = is3D ? 60 : 0;
+  const bearing = is3D ? -32 : 0;
+  if (animate) {
+    state.map.easeTo({ pitch, bearing, duration: 600 });
+  } else {
+    state.map.setPitch(pitch);
+    state.map.setBearing(bearing);
   }
 }
 
@@ -583,16 +697,7 @@ function startAutoplay() {
   }
   state.autoplayActive = true;
   updatePlayButtonState();
-  state.autoplayHandle = setInterval(() => {
-    const entries = state.currentTimeline;
-    if (!entries.length) {
-      stopAutoplay();
-      return;
-    }
-    const currentIndex = Number(sliderEl.value) || 0;
-    const nextIndex = (currentIndex + 1) % entries.length;
-    goToTimelineIndex(nextIndex);
-  }, AUTOPLAY_INTERVAL);
+  rescheduleAutoplay();
 }
 
 function stopAutoplay() {
@@ -605,6 +710,25 @@ function stopAutoplay() {
     state.autoplayHandle = null;
   }
   updatePlayButtonState();
+}
+
+function rescheduleAutoplay() {
+  if (!state.autoplayActive) {
+    return;
+  }
+  if (state.autoplayHandle) {
+    clearInterval(state.autoplayHandle);
+  }
+  state.autoplayHandle = setInterval(() => {
+    const entries = state.currentTimeline;
+    if (!entries.length) {
+      stopAutoplay();
+      return;
+    }
+    const currentIndex = Number(sliderEl.value) || 0;
+    const nextIndex = (currentIndex + 1) % entries.length;
+    goToTimelineIndex(nextIndex);
+  }, state.autoplayIntervalMs);
 }
 
 function updatePlayButtonState() {
@@ -625,6 +749,25 @@ function updatePlayButtonState() {
   }
 }
 
+function updateViewToggleButton() {
+  if (!viewToggleEl) {
+    return;
+  }
+  viewToggleEl.textContent = state.viewMode === "3d" ? "切換為 2D" : "切換為 3D";
+}
+
+function updateHeightScaleLabel(value) {
+  if (heightScaleValueEl) {
+    heightScaleValueEl.textContent = `${value}×`;
+  }
+}
+
+function updateAutoplaySpeedLabel(seconds) {
+  if (speedValueEl) {
+    speedValueEl.textContent = `${seconds.toFixed(1)} 秒`;
+  }
+}
+
 function updateLegendLabels() {
   const config = MODE_CONFIGS[state.currentMode] ?? MODE_CONFIGS.raw;
   if (legendLabelLow) {
@@ -638,20 +781,20 @@ function updateLegendLabels() {
   }
 }
 
-function createExtrusionPolygon(lng, lat, sizeMeters = 60) {
-  const latOffset = sizeMeters / 111320;
+function createExtrusionPolygon(lng, lat, radiusMeters = 40, segments = 24) {
   const cosLat = Math.cos((lat * Math.PI) / 180);
-  const lngOffset = sizeMeters / (111320 * Math.max(cosLat, 0.01));
-  const ring = [
-    [lng - lngOffset, lat - latOffset],
-    [lng + lngOffset, lat - latOffset],
-    [lng + lngOffset, lat + latOffset],
-    [lng - lngOffset, lat + latOffset],
-    [lng - lngOffset, lat - latOffset]
-  ];
+  const coordinates = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    const dx = Math.cos(angle) * radiusMeters;
+    const dy = Math.sin(angle) * radiusMeters;
+    const latOffset = dy / 111320;
+    const lngOffset = dx / (111320 * Math.max(cosLat, 0.01));
+    coordinates.push([lng + lngOffset, lat + latOffset]);
+  }
   return {
     type: "Polygon",
-    coordinates: [ring]
+    coordinates: [coordinates]
   };
 }
 
