@@ -80,8 +80,8 @@ const MODE_CONFIGS = {
 };
 
 const state = {
-  timelineEntries: [],
-  groupedByDate: new Map(),
+  manifest: [],
+  cacheByDate: new Map(),
   currentDate: null,
   currentTimeline: [],
   mapReady: false,
@@ -379,26 +379,14 @@ async function loadData() {
       throw new Error("manifest 無資料");
     }
 
-    const entries = [];
-    for (const item of manifest) {
-      if (!item?.file || !item?.date) {
-        console.warn("manifest 格式錯誤", item);
-        continue;
-      }
-      const csvUrl = `csv/${item.file}`;
-      const text = await fetchCsv(csvUrl);
-      const date = item.date;
-      const parsed = parseCsv(text, date);
-      entries.push(...parsed);
+    state.manifest = manifest.filter(item => item?.file && item?.date);
+    state.cacheByDate.clear();
+    populateDateSelect(state.manifest.map(item => item.date));
+
+    const firstDate = state.manifest[0]?.date;
+    if (firstDate) {
+      await updateTimelineForDate(firstDate);
     }
-
-    entries.sort((a, b) => a.timestamp - b.timestamp);
-    state.timelineEntries = entries;
-    state.groupedByDate = groupEntriesByDate(entries);
-    populateDateSelect(state.groupedByDate.keys());
-
-    const firstDate = state.groupedByDate.keys().next().value;
-    updateTimelineForDate(firstDate);
   } catch (error) {
     console.error(error);
     labelEl.textContent = `載入失敗：${error.message}`;
@@ -489,56 +477,66 @@ function parseCsv(text, date) {
   }));
 }
 
-function groupEntriesByDate(entries) {
-  const grouped = new Map();
-  for (const entry of entries) {
-    if (!grouped.has(entry.date)) {
-      grouped.set(entry.date, []);
-    }
-    grouped.get(entry.date).push(entry);
-  }
-  for (const list of grouped.values()) {
-    list.sort((a, b) => a.timestamp - b.timestamp);
-  }
-  return grouped;
-}
-
-function populateDateSelect(datesIterator) {
+function populateDateSelect(dates) {
   dateSelectEl.innerHTML = "";
-  const dates = Array.from(datesIterator);
   for (const date of dates) {
     const option = document.createElement("option");
     option.value = date;
     option.textContent = date;
     dateSelectEl.appendChild(option);
   }
-  dateSelectEl.addEventListener("change", event => {
-    updateTimelineForDate(event.target.value);
+  dateSelectEl.addEventListener("change", async event => {
+    await updateTimelineForDate(event.target.value);
   });
 }
 
-function updateTimelineForDate(date) {
-  const entries = state.groupedByDate.get(date);
-  if (!entries || !entries.length) {
-    labelEl.textContent = "選擇的日期沒有資料";
-    sliderEl.disabled = true;
-    stopAutoplay();
-    updatePlayButtonState();
-    return;
+async function loadEntriesForDate(date) {
+  if (!date) {
+    return [];
   }
+  if (state.cacheByDate.has(date)) {
+    return state.cacheByDate.get(date);
+  }
+  const manifestItem = state.manifest.find(item => item.date === date);
+  if (!manifestItem) {
+    throw new Error(`manifest 沒有 ${date} 的資料`);
+  }
+  const csvUrl = `csv/${manifestItem.file}`;
+  const textData = await fetchCsv(csvUrl);
+  const entries = parseCsv(textData, date);
+  state.cacheByDate.set(date, entries);
+  return entries;
+}
+
+async function updateTimelineForDate(date) {
   stopAutoplay();
-  state.currentDate = date;
-  if (dateSelectEl) {
-    dateSelectEl.value = date;
+  labelEl.textContent = "載入資料中…";
+  try {
+    const entries = await loadEntriesForDate(date);
+    if (!entries.length) {
+      labelEl.textContent = "選擇的日期沒有資料";
+      sliderEl.disabled = true;
+      updatePlayButtonState();
+      return;
+    }
+    state.currentDate = date;
+    if (dateSelectEl) {
+      dateSelectEl.value = date;
+    }
+    state.currentTimeline = entries;
+    state.lastFittedDate = null;
+    sliderEl.min = 0;
+    sliderEl.max = entries.length - 1;
+    sliderEl.value = 0;
+    sliderEl.disabled = false;
+    goToTimelineIndex(0, { fromSlider: true });
+    updatePlayButtonState();
+  } catch (error) {
+    console.error(error);
+    labelEl.textContent = `載入失敗：${error.message}`;
+    sliderEl.disabled = true;
+    updatePlayButtonState();
   }
-  state.currentTimeline = entries;
-  state.lastFittedDate = null;
-  sliderEl.min = 0;
-  sliderEl.max = entries.length - 1;
-  sliderEl.value = 0;
-  sliderEl.disabled = false;
-  goToTimelineIndex(0, { fromSlider: true });
-  updatePlayButtonState();
 }
 
 sliderEl.addEventListener("input", () => {
@@ -937,3 +935,4 @@ function emptyGeoJSON() {
 
 initMap();
 loadData();
+
