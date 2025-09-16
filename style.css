@@ -83,7 +83,7 @@ code {
   gap: 1.5rem;
 }
 
-#date-select {
+#date-select, #mode-select {
   background-color: #1f2937;
   color: #e2e8f0;
   padding: 0.4rem 0.7rem;
@@ -144,4 +144,74 @@ code {
 .tooltip__title {
   font-weight: 600;
   margin-bottom: 0.25rem;
+}
+
+.control-button {
+  background: rgba(56, 189, 248, 0.12);
+  color: #e0f2fe;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.control-button:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
+.control-button--active {
+  background: #38bdf8;
+  color: #0f172a;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4);
+}
+
+.scale-control {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #cbd5f5;
+  font-size: 0.95rem;
+}
+
+#height-scale {
+  width: 160px;
+  accent-color: #38bdf8;
+}
+
+#height-scale-value {
+  min-width: 2.5rem;
+  font-weight: 600;
+  text-align: right;
+  color: #f8fafc;
+}
+
+.mode-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #cbd5f5;
+  font-size: 0.95rem;
+}
+
+.mode-control select {
+  background-color: #1f2937;
+  color: #e2e8f0;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+}
+
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.legend__text {
+  color: #cbd5f5;
 }

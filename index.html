@@ -19,11 +19,23 @@
         <div class="timeline__label" id="timeline-label">載入資料中…</div>
         <input type="range" id="time-slider" min="0" max="0" value="0" step="1" disabled>
         <div class="timeline__meta">
+          <button id="play-toggle" class="control-button" type="button" aria-label="自動播放">▶ 自動播放</button>
+          <label class="scale-control" for="height-scale">柱高倍率
+            <input type="range" id="height-scale" min="2" max="20" step="1" value="6" aria-valuemin="2" aria-valuemax="20" aria-valuenow="6">
+            <span id="height-scale-value">6×</span>
+          </label>
+          <label class="mode-control" for="mode-select">顯示模式
+            <select id="mode-select" aria-label="選擇顯示模式">
+              <option value="raw" selected>即時車量</option>
+              <option value="delta">十分鐘變化量</option>
+              <option value="cumulative">當日累積變化</option>
+            </select>
+          </label>
           <select id="date-select" aria-label="選擇日期"></select>
           <div class="legend">
-            <span class="legend__dot legend__dot--low"></span> 低車量
-            <span class="legend__dot legend__dot--mid"></span> 中等
-            <span class="legend__dot legend__dot--high"></span> 高車量
+            <span class="legend__item"><span class="legend__dot legend__dot--low"></span><span class="legend__text" id="legend-label-low">低車量</span></span>
+            <span class="legend__item"><span class="legend__dot legend__dot--mid"></span><span class="legend__text" id="legend-label-mid">中等</span></span>
+            <span class="legend__item"><span class="legend__dot legend__dot--high"></span><span class="legend__text" id="legend-label-high">高車量</span></span>
           </div>
         </div>
       </div>
