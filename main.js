@@ -6,6 +6,7 @@ const labelEl = document.getElementById("timeline-label");
 const dateSelectEl = document.getElementById("date-select");
 const playButtonEl = document.getElementById("play-toggle");
 const viewToggleEl = document.getElementById("view-toggle");
+const labelToggleEl = document.getElementById("label-toggle");
 const heightScaleEl = document.getElementById("height-scale");
 const heightScaleValueEl = document.getElementById("height-scale-value");
 const speedSliderEl = document.getElementById("autoplay-speed");
