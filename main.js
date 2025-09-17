@@ -717,7 +717,7 @@ function updateFlashPaint(now) {
     try {
       state.map.setPaintProperty("stations-circle", "circle-stroke-width", ["+", 1, ["*", flashExpr, 4]]);
       state.map.setPaintProperty("stations-circle", "circle-stroke-color", ["interpolate", ["linear"], flashExpr, 0, "#0f172a", 1, "#ffffff"]);
-      state.map.setPaintProperty("stations-circle", "circle-opacity", ["clamp", ["+", 0.55, ["*", flashExpr, 0.4]], 0.55, 1]);
+      state.map.setPaintProperty("stations-circle", "circle-opacity", ["clamp", ["+", 0.55, ["*", flashExpr, 0.5]], 0.55, 1]);
     } catch (error) {
       console.warn('circle flash failed', error);
     }
