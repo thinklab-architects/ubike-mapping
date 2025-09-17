@@ -76,6 +76,23 @@ const MODE_CONFIGS = {
       20, "#86efac",
       80, "#15803d"
     ]
+  },
+  "abs-total": {
+    id: "abs-total",
+    label: "每日絕對變化累積",
+    metricLabel: "絕對變化累積",
+    legend: { low: "低總變化", mid: "中等", high: "高總變化" },
+    supportsNegative: false,
+    formatter: value => formatNumber(value),
+    colorExpression: [
+      "interpolate",
+      ["linear"],
+      ["get", "value"],
+      0, "#e2e8f0",
+      20, "#38bdf8",
+      50, "#0ea5e9",
+      80, "#1d4ed8"
+    ]
   }
 };
 
@@ -442,12 +459,15 @@ function parseCsv(text, date) {
 
     let previousValue = null;
     let cumulativeChange = 0;
+    let absCumulative = 0;
 
     for (let i = 0; i < timeColumns.length; i += 1) {
       const rawValue = Number(row[timeStartIndex + i]);
       const available = Number.isFinite(rawValue) ? rawValue : 0;
       const delta = previousValue === null ? 0 : available - previousValue;
+      const absDelta = previousValue === null ? 0 : Math.abs(delta);
       cumulativeChange += delta;
+      absCumulative += absDelta;
 
       slots[i].stations.push({
         lng,
@@ -459,6 +479,7 @@ function parseCsv(text, date) {
         available,
         delta,
         cumulative: cumulativeChange,
+        absCumulative: absCumulative,
         polygon: createExtrusionPolygon(lng, lat, 40)
       });
 
@@ -602,6 +623,7 @@ function buildGeoJSON(entry, mode, geometryType) {
         available: station.available,
         delta: station.delta,
         cumulative: station.cumulative,
+        absCumulative: station.absCumulative,
         value,
         valueDisplay: config.formatter(value),
         metricLabel: config.metricLabel,
@@ -623,6 +645,8 @@ function getMetricValue(station, mode) {
       return station.delta;
     case "cumulative":
       return station.cumulative;
+    case "abs-total":
+      return station.absCumulative;
     case "raw":
     default:
       return station.available;
@@ -748,7 +772,7 @@ function updateHeatmapVisibility() {
   if (!state.mapReady) {
     return;
   }
-  const shouldShow = state.currentMode === "delta" || state.currentMode === "cumulative";
+  const shouldShow = state.currentMode === "delta" || state.currentMode === "cumulative" || state.currentMode === "abs-total";
   const visibility = shouldShow ? "visible" : "none";
   const opacity = shouldShow ? 0.55 : 0;
 
