@@ -921,6 +921,9 @@ function renderSlot(entry) {
   const points = getGeoJSONForEntry(entry, state.currentMode, "point");
   source3d.setData(polygons);
   source2d.setData(points);
+  if (state.hexModeEnabled) {
+    updateHexGrid(entry);
+  }
   updateFlashPaint(now);
   scheduleFlashDecay(now);
   labelEl.textContent = entry.label;
