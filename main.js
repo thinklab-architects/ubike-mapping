@@ -21,6 +21,11 @@ const DEFAULT_AUTOPLAY_SECONDS = Number(speedSliderEl?.value) || 1.5;
 const DEFAULT_AUTOPLAY_INTERVAL_MS = DEFAULT_AUTOPLAY_SECONDS * 1000;
 const DEFAULT_MODE = modeSelectEl?.value || "raw";
 const DEFAULT_VIEW_MODE = "3d";
+const DEFAULT_CENTER = [120.302, 22.639];
+const DEFAULT_ZOOM = 12.8;
+const DEFAULT_PITCH = 45;
+const DEFAULT_BEARING = -15;
+const FLASH_DURATION_MS = 900;
 
 const MODE_CONFIGS = {
   raw: {
@@ -34,8 +39,8 @@ const MODE_CONFIGS = {
       "interpolate",
       ["linear"],
       ["get", "value"],
-      0, "#ef4444",
-      10, "#fbbf24",
+      0, "#000000",
+      10, "#f97316",
       20, "#22c55e"
     ]
   },
@@ -52,9 +57,7 @@ const MODE_CONFIGS = {
       ["get", "value"],
       -40, "#ef4444",
       -10, "#f87171",
-      -1, "#fca5a5",
-      0, "#e2e8f0",
-      1, "#86efac",
+      0, "#000000",
       10, "#22c55e",
       40, "#15803d"
     ]
@@ -72,9 +75,9 @@ const MODE_CONFIGS = {
       ["get", "value"],
       -80, "#ef4444",
       -20, "#f87171",
-      0, "#e2e8f0",
-      20, "#86efac",
-      80, "#15803d"
+      0, "#000000",
+      40, "#38bdf8",
+      80, "#1d4ed8"
     ]
   },
   "abs-total": {
@@ -88,10 +91,10 @@ const MODE_CONFIGS = {
       "interpolate",
       ["linear"],
       ["get", "value"],
-      0, "#e2e8f0",
-      20, "#38bdf8",
-      50, "#0ea5e9",
-      80, "#1d4ed8"
+      0, "#000000",
+      30, "#38bdf8",
+      60, "#0ea5e9",
+      90, "#1d4ed8"
     ]
   }
 };
@@ -111,7 +114,8 @@ const state = {
   autoplayIntervalMs: DEFAULT_AUTOPLAY_INTERVAL_MS,
   currentMode: DEFAULT_MODE,
   viewMode: DEFAULT_VIEW_MODE,
-  labelsVisible: true
+  labelsVisible: true,
+  lastRenderedValues: new Map()
 };
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
@@ -198,11 +202,11 @@ updateLabelToggleButton();
 function initMap() {
   state.map = new mapboxgl.Map({
     container: "map",
-    style: "mapbox://styles/mapbox/light-v11",
-    center: [121.0, 25.0],
-    zoom: 11,
-    pitch: 60,
-    bearing: -32
+    style: "mapbox://styles/johnchen2024/cmey0u4xu010k01ss2v6w7kw2",
+    center: DEFAULT_CENTER,
+    zoom: DEFAULT_ZOOM,
+    pitch: DEFAULT_PITCH,
+    bearing: DEFAULT_BEARING
   });
 
   state.popup = new mapboxgl.Popup({
@@ -473,6 +477,7 @@ function parseCsv(text, date) {
       absCumulative += absDelta;
 
       slots[i].stations.push({
+        id: row[columnIndex.sno] ?? row[columnIndex.sna] ?? `${lng},${lat}`,
         lng,
         lat,
         station: row[columnIndex.sna] ?? row[columnIndex.sno] ?? "未知站點",
@@ -548,11 +553,13 @@ async function updateTimelineForDate(date) {
       dateSelectEl.value = date;
     }
     state.currentTimeline = entries;
+    state.lastRenderedValues = new Map();
     state.lastFittedDate = null;
     sliderEl.min = 0;
     sliderEl.max = entries.length - 1;
     sliderEl.value = 0;
     sliderEl.disabled = false;
+    setDefaultView();
     goToTimelineIndex(0, { fromSlider: true });
     updatePlayButtonState();
   } catch (error) {
@@ -579,6 +586,64 @@ function goToTimelineIndex(index, { fromSlider = false } = {}) {
   renderSlot(entry);
 }
 
+function markStationChanges(entry) {
+  const now = Date.now();
+  const nextValues = new Map();
+  for (const station of entry.stations) {
+    const key = station.id ?? `${station.lng},${station.lat}`;
+    const previous = state.lastRenderedValues.get(key);
+    const changed = previous !== undefined && previous.available !== station.available;
+    if (changed) {
+      station.changeTimestamp = now;
+    } else if (previous?.changeTimestamp) {
+      station.changeTimestamp = previous.changeTimestamp;
+    } else {
+      station.changeTimestamp = station.changeTimestamp ?? 0;
+    }
+    nextValues.set(key, {
+      available: station.available,
+      changeTimestamp: station.changeTimestamp ?? 0
+    });
+  }
+  state.lastRenderedValues = nextValues;
+  if (entry.geojsonCache) {
+    entry.geojsonCache.clear();
+  }
+  return now;
+}
+
+function updateFlashPaint(now) {
+  if (!state.mapReady) {
+    return;
+  }
+  const timeDeltaExpr = ["max", 0, ["-", now, ["coalesce", ["to-number", ["get", "changeTimestamp"]], 0]]];
+  const flashExpr = ["interpolate", ["linear"], timeDeltaExpr, 0, 1.2, FLASH_DURATION_MS, 0];
+
+  if (state.map.getLayer("stations-extrusion")) {
+    state.map.setPaintProperty("stations-extrusion", "fill-extrusion-emissive-strength", ["+", 0.1, ["*", flashExpr, 1.6]]);
+    state.map.setPaintProperty("stations-extrusion", "fill-extrusion-opacity", ["+", 0.7, ["*", flashExpr, 0.25]]);
+  }
+  if (state.map.getLayer("stations-circle")) {
+    state.map.setPaintProperty("stations-circle", "circle-stroke-width", ["+", 1, ["*", flashExpr, 2.5]]);
+    state.map.setPaintProperty("stations-circle", "circle-opacity", ["+", 0.55, ["*", flashExpr, 0.35]]);
+  }
+}
+
+
+function setDefaultView() {
+  if (!state.mapReady) {
+    return;
+  }
+  state.map.easeTo({
+    center: DEFAULT_CENTER,
+    zoom: DEFAULT_ZOOM,
+    pitch: DEFAULT_PITCH,
+    bearing: DEFAULT_BEARING,
+    duration: 1200,
+    essential: true
+  });
+}
+
 function renderSlot(entry) {
   if (!state.mapReady || !state.map?.isStyleLoaded()) {
     return;
@@ -588,10 +653,12 @@ function renderSlot(entry) {
   if (!source3d || !source2d) {
     return;
   }
+  const now = markStationChanges(entry);
   const polygons = getGeoJSONForEntry(entry, state.currentMode, "polygon");
   const points = getGeoJSONForEntry(entry, state.currentMode, "point");
   source3d.setData(polygons);
   source2d.setData(points);
+  updateFlashPaint(now);
   labelEl.textContent = entry.label;
   if (state.lastFittedDate !== entry.date) {
     fitMapToFeatures(polygons);
@@ -632,6 +699,7 @@ function buildGeoJSON(entry, mode, geometryType) {
         valueDisplay: config.formatter(value),
         metricLabel: config.metricLabel,
         labelValue: config.formatter(value),
+        changeTimestamp: station.changeTimestamp ?? 0,
         centerLng: station.lng,
         centerLat: station.lat
       }
@@ -675,7 +743,7 @@ function fitMapToFeatures(geojson) {
   }, new mapboxgl.LngLatBounds());
 
   if (!bounds.isEmpty()) {
-    state.map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 });
+    state.map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800, pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING });
   }
 }
 
@@ -742,7 +810,7 @@ function applyCircleStyle(config) {
 
   map.setPaintProperty("stations-circle", "circle-radius", radiusExpr);
   map.setPaintProperty("stations-circle", "circle-color", config.colorExpression);
-  map.setPaintProperty("stations-circle", "circle-opacity", 0.85);
+  map.setPaintProperty("stations-circle", "circle-opacity", 0.55);
   map.setPaintProperty("stations-circle", "circle-stroke-color", "#0f172a");
   map.setPaintProperty("stations-circle", "circle-stroke-width", 1);
 }
@@ -824,8 +892,8 @@ function applyViewModeSettings({ animate = true } = {}) {
     state.map.setLayoutProperty("stations-labels", "text-offset", is3D ? [0, 1.2] : [0, 0.6]);
   }
 
-  const pitch = is3D ? 60 : 0;
-  const bearing = is3D ? -32 : 0;
+  const pitch = is3D ? DEFAULT_PITCH : 0;
+  const bearing = is3D ? DEFAULT_BEARING : 0;
   if (animate) {
     state.map.easeTo({ pitch, bearing, duration: 600 });
   } else {
