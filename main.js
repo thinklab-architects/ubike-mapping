@@ -13,6 +13,9 @@ const speedSliderEl = document.getElementById("autoplay-speed");
 const speedValueEl = document.getElementById("autoplay-speed-value");
 const modeSelectEl = document.getElementById("mode-select");
 const legendLabelLow = document.getElementById("legend-label-low");
+const hexToggleEl = document.getElementById("hex-toggle");
+const hexSizeEl = document.getElementById("hex-size");
+const hexSizeValueEl = document.getElementById("hex-size-value");
 const legendLabelMid = document.getElementById("legend-label-mid");
 const legendLabelHigh = document.getElementById("legend-label-high");
 
@@ -26,6 +29,7 @@ const DEFAULT_ZOOM = 12.8;
 const DEFAULT_PITCH = 45;
 const DEFAULT_BEARING = -15;
 const FLASH_DURATION_MS = 900;
+const DEFAULT_HEX_SIZE_METERS = Number(hexSizeEl?.value) || 400;
 
 const MODE_CONFIGS = {
   raw: {
@@ -102,6 +106,7 @@ const MODE_CONFIGS = {
 const state = {
   manifest: [],
   cacheByDate: new Map(),
+  hexCache: new Map(),
   currentDate: null,
   currentTimeline: [],
   mapReady: false,
@@ -117,7 +122,9 @@ const state = {
   labelsVisible: true,
   lastRenderedValues: new Map(),
   flashActiveUntil: 0,
-  flashAnimationFrame: null
+  flashAnimationFrame: null,
+  hexModeEnabled: false,
+  hexCellSizeMeters: DEFAULT_HEX_SIZE_METERS
 };
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
@@ -156,6 +163,44 @@ if (labelToggleEl) {
   });
 }
 
+
+if (hexToggleEl) {
+  hexToggleEl.addEventListener("click", () => {
+    state.hexModeEnabled = !state.hexModeEnabled;
+    updateHexToggleButton();
+    const currentEntry = state.currentTimeline[Number(sliderEl.value)] ?? state.currentTimeline[0];
+    if (state.hexModeEnabled) {
+      updateHexGrid(currentEntry);
+    } else {
+      updateHexGrid(null);
+    }
+    updateHeatmapVisibility();
+    if (hexSizeEl) {
+      hexSizeEl.disabled = !state.hexModeEnabled;
+    }
+  });
+}
+
+if (hexSizeEl) {
+  hexSizeEl.disabled = true;
+  hexSizeEl.addEventListener("input", () => {
+    const meters = Number(hexSizeEl.value);
+    if (!Number.isFinite(meters) || meters <= 0) {
+      return;
+    }
+    state.hexCellSizeMeters = meters;
+    updateHexSizeLabel(meters);
+    state.hexCache.clear();
+    if (state.hexModeEnabled) {
+      const currentEntry = state.currentTimeline[Number(sliderEl.value)] ?? state.currentTimeline[0];
+      updateHexGrid(currentEntry);
+    }
+  });
+  updateHexSizeLabel(Number(hexSizeEl.value));
+}
+
+updateHexToggleButton();
+
 if (heightScaleEl) {
   heightScaleEl.addEventListener("input", () => {
     const value = Number(heightScaleEl.value);
@@ -190,6 +235,7 @@ if (modeSelectEl) {
     stopAutoplay();
     updateLegendLabels();
     applyExtrusionStyle();
+    state.hexCache.clear();
     refreshCurrentView();
   });
 }
@@ -339,12 +385,32 @@ function initMap() {
       }
     });
 
-    const hoverLayers = ["stations-extrusion", "stations-circle"];
+    const hoverLayers = ["stations-extrusion", "stations-circle", "hex-extrusion"];
+
     hoverLayers.forEach(layerId => {
       state.map.on("mousemove", layerId, e => {
         const feature = e.features?.[0];
         if (!feature) {
           state.popup.remove();
+          return;
+        }
+        const config = MODE_CONFIGS[state.currentMode] ?? MODE_CONFIGS.raw;
+        const layer = feature.layer?.id ?? "";
+        if (layer === "hex-extrusion") {
+          const value = Number(feature.properties.value ?? 0);
+          const count = Number(feature.properties.count ?? 0);
+          const hexLng = Number(feature.properties.centerLng ?? feature.geometry?.coordinates?.[0]?.[0]?.[0] ?? 0);
+          const hexLat = Number(feature.properties.centerLat ?? feature.geometry?.coordinates?.[0]?.[0]?.[1] ?? 0);
+          state.popup
+            .setLngLat([hexLng, hexLat])
+            .setHTML(`
+              <div class="tooltip">
+                <div class="tooltip__title">六角網格</div>
+                <div>${feature.properties.metricLabel ?? config.label}：${config.formatter(value)}</div>
+                <div>覆蓋站點數：${count}</div>
+              </div>
+            `)
+            .addTo(state.map);
           return;
         }
         const {
@@ -379,6 +445,7 @@ function initMap() {
           .addTo(state.map);
       });
     });
+
 
     hoverLayers.forEach(layerId => {
       state.map.on("mouseleave", layerId, () => state.popup.remove());
@@ -554,6 +621,7 @@ async function updateTimelineForDate(date) {
     }
     state.currentTimeline = entries;
     state.lastRenderedValues = new Map();
+    state.hexCache.clear();
     if (state.flashAnimationFrame) {
       cancelAnimationFrame(state.flashAnimationFrame);
       state.flashAnimationFrame = null;
@@ -694,6 +762,149 @@ function removeDefaultBuildingLayers() {
       }
     }
   }
+}
+
+
+function ensureHexLayer() {
+  if (!state.mapReady || state.map.getSource("hex-grid")) {
+    return;
+  }
+  state.map.addSource("hex-grid", {
+    type: "geojson",
+    data: emptyGeoJSON()
+  });
+  state.map.addLayer({
+    id: "hex-extrusion",
+    type: "fill-extrusion",
+    source: "hex-grid",
+    layout: { visibility: "none" },
+    paint: {
+      "fill-extrusion-height": 0,
+      "fill-extrusion-base": 0,
+      "fill-extrusion-opacity": 0.85,
+      "fill-extrusion-color": "#38bdf8"
+    }
+  });
+}
+
+function updateHexToggleButton() {
+  if (!hexToggleEl) {
+    return;
+  }
+  if (state.hexModeEnabled) {
+    hexToggleEl.classList.add("control-button--active");
+    hexToggleEl.textContent = "隱藏六角網格";
+    hexToggleEl.setAttribute("aria-pressed", "true");
+  } else {
+    hexToggleEl.classList.remove("control-button--active");
+    hexToggleEl.textContent = "顯示六角網格";
+    hexToggleEl.setAttribute("aria-pressed", "false");
+  }
+}
+
+function updateHexSizeLabel(value) {
+  if (hexSizeValueEl) {
+    hexSizeValueEl.textContent = `${Math.round(value)} m`;
+  }
+}
+
+function updateHexLayerVisibility() {
+  if (!state.mapReady) {
+    return;
+  }
+  const hexVisible = state.hexModeEnabled;
+  if (state.map.getLayer("hex-extrusion")) {
+    state.map.setLayoutProperty("hex-extrusion", "visibility", hexVisible ? "visible" : "none");
+  }
+  if (hexVisible) {
+    if (state.map.getLayer("stations-extrusion")) {
+      state.map.setLayoutProperty("stations-extrusion", "visibility", "none");
+    }
+    if (state.map.getLayer("stations-circle")) {
+      state.map.setLayoutProperty("stations-circle", "visibility", "none");
+    }
+  } else {
+    applyViewModeSettings();
+    updateHeatmapVisibility();
+  }
+}
+
+function updateHexGrid(entry) {
+  if (!state.mapReady) {
+    return;
+  }
+  ensureHexLayer();
+  const source = state.map.getSource("hex-grid");
+  if (!source) {
+    return;
+  }
+  if (!state.hexModeEnabled || !entry) {
+    source.setData(emptyGeoJSON());
+    updateHexLayerVisibility();
+    return;
+  }
+  const cacheKey = `${entry.key}:${state.currentMode}:${state.hexCellSizeMeters}`;
+  let grid = state.hexCache.get(cacheKey);
+  if (!grid) {
+    const config = MODE_CONFIGS[state.currentMode] ?? MODE_CONFIGS.raw;
+    const pointFeatures = entry.stations
+      .filter(station => Number.isFinite(station.lng) && Number.isFinite(station.lat))
+      .map(station => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [station.lng, station.lat] },
+        properties: {
+          value: getMetricValue(station, state.currentMode)
+        }
+      }));
+    if (!pointFeatures.length) {
+      grid = emptyGeoJSON();
+    } else {
+      const pointsFC = turf.featureCollection(pointFeatures);
+      let bbox = turf.bbox(pointsFC);
+      if (bbox[0] === bbox[2]) {
+        bbox[0] -= 0.001;
+        bbox[2] += 0.001;
+      }
+      if (bbox[1] === bbox[3]) {
+        bbox[1] -= 0.001;
+        bbox[3] += 0.001;
+      }
+      const cellSideKm = Math.max(state.hexCellSizeMeters / 1000, 0.05);
+      const gridFeatures = turf.hexGrid(bbox, cellSideKm, { units: 'kilometers' }).features;
+      const features = [];
+      for (const hex of gridFeatures) {
+        const pts = turf.pointsWithinPolygon(pointsFC, hex).features;
+        if (!pts.length) {
+          continue;
+        }
+        let total = 0;
+        for (const pt of pts) {
+          const val = Number(pt.properties.value) || 0;
+          total += val;
+        }
+        if (!Number.isFinite(total)) {
+          continue;
+        }
+        const center = turf.centerOfMass(hex).geometry.coordinates;
+        features.push({
+          type: 'Feature',
+          geometry: hex.geometry,
+          properties: {
+            value: total,
+            count: pts.length,
+            centerLng: center[0],
+            centerLat: center[1],
+            metricLabel: config.label
+          }
+        });
+      }
+      grid = { type: 'FeatureCollection', features };
+    }
+    state.hexCache.set(cacheKey, grid);
+  }
+  source.setData(grid);
+  applyHexStyle(MODE_CONFIGS[state.currentMode] ?? MODE_CONFIGS.raw);
+  updateHexLayerVisibility();
 }
 
 function renderSlot(entry) {
@@ -840,8 +1051,23 @@ function applyExtrusionStyle() {
   }
 
   applyCircleStyle(config);
+  applyHexStyle(config);
   applyHeatmapStyle(config);
   updateHeatmapVisibility();
+}
+
+function applyHexStyle(config) {
+  if (!state.mapReady) {
+    return;
+  }
+  const map = state.map;
+  if (!map.getLayer("hex-extrusion")) {
+    return;
+  }
+  const valueExpr = ["get", "value"];
+  const magnitudeExpr = config.supportsNegative ? ["abs", valueExpr] : valueExpr;
+  map.setPaintProperty("hex-extrusion", "fill-extrusion-height", ["*", magnitudeExpr, state.heightScale]);
+  map.setPaintProperty("hex-extrusion", "fill-extrusion-color", config.colorExpression);
 }
 
 function applyCircleStyle(config) {
@@ -894,10 +1120,23 @@ function applyHeatmapStyle(config) {
 }
 
 function updateHeatmapVisibility() {
+
   if (!state.mapReady) {
     return;
   }
+  if (state.hexModeEnabled) {
+    if (state.map.getLayer("stations-heatmap-negative")) {
+      state.map.setLayoutProperty("stations-heatmap-negative", "visibility", "none");
+      state.map.setPaintProperty("stations-heatmap-negative", "heatmap-opacity", 0);
+    }
+    if (state.map.getLayer("stations-heatmap-positive")) {
+      state.map.setLayoutProperty("stations-heatmap-positive", "visibility", "none");
+      state.map.setPaintProperty("stations-heatmap-positive", "heatmap-opacity", 0);
+    }
+    return;
+  }
   const shouldShow = state.currentMode === "delta" || state.currentMode === "cumulative" || state.currentMode === "abs-total";
+
   const visibility = shouldShow ? "visible" : "none";
   const opacity = shouldShow ? 0.55 : 0;
 
@@ -931,9 +1170,9 @@ function applyViewModeSettings({ animate = true } = {}) {
   if (!state.mapReady) {
     return;
   }
-  const is3D = state.viewMode === "3d";
-  const extrudeVisibility = is3D ? "visible" : "none";
-  const circleVisibility = is3D ? "none" : "visible";
+  const is3D = state.viewMode === "3d" && !state.hexModeEnabled;
+  const extrudeVisibility = state.hexModeEnabled ? "none" : (is3D ? "visible" : "none");
+  const circleVisibility = state.hexModeEnabled ? "none" : (is3D ? "none" : "visible");
 
   if (state.map.getLayer("stations-extrusion")) {
     state.map.setLayoutProperty("stations-extrusion", "visibility", extrudeVisibility);

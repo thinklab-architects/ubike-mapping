@@ -239,3 +239,23 @@ code {
 #view-toggle {
   min-width: 6.5rem;
 }
+
+.hex-control {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #cbd5f5;
+  font-size: 0.95rem;
+}
+
+#hex-size {
+  width: 160px;
+  accent-color: #a855f7;
+}
+
+#hex-size-value {
+  min-width: 3rem;
+  font-weight: 600;
+  text-align: right;
+  color: #f8fafc;
+}

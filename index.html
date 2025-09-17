@@ -30,6 +30,11 @@
             <input type="range" id="autoplay-speed" min="0.5" max="5" step="0.1" value="1.5" aria-valuemin="0.5" aria-valuemax="5" aria-valuenow="1.5">
             <span id="autoplay-speed-value">1.5 秒</span>
           </label>
+          <button id="hex-toggle" class="control-button" type="button" aria-label="切換六角網格">顯示六角網格</button>
+          <label class="hex-control" for="hex-size">網格大小
+            <input type="range" id="hex-size" min="150" max="1200" step="50" value="400" aria-valuemin="150" aria-valuemax="1200" aria-valuenow="400">
+            <span id="hex-size-value">400 m</span>
+          </label>
           <label class="mode-control" for="mode-select">顯示模式
             <select id="mode-select" aria-label="選擇顯示模式">
               <option value="raw" selected>即時車量</option>
@@ -50,6 +55,7 @@
   </div>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <script src="main.js" type="module"></script>
 </body>
 </html>
