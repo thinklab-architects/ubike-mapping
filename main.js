@@ -204,7 +204,7 @@ updateLabelToggleButton();
 function initMap() {
   state.map = new mapboxgl.Map({
     container: "map",
-    style: "mapbox://styles/johnchen2024/cmey0u4xu010k01ss2v6w7kw2",
+    style: "mapbox://styles/mapbox/dark-v11",
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
     pitch: DEFAULT_PITCH,
@@ -219,11 +219,9 @@ function initMap() {
   state.map.on("load", () => {
     state.mapReady = true;
 
-    state.map.addSource("mapbox-dem", {
-      type: "raster-dem",
-      url: "mapbox://mapbox.mapbox-terrain-dem-v1"
-    });
-    state.map.setTerrain({ source: "mapbox-dem", exaggeration: 1.2 });
+    removeDefaultBuildingLayers();
+    state.map.on("styledata", removeDefaultBuildingLayers);
+
     state.map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0 });
 
     state.map.addSource("stations-3d", {
@@ -675,6 +673,27 @@ function setDefaultView() {
     duration: 1200,
     essential: true
   });
+}
+
+function removeDefaultBuildingLayers() {
+  if (!state.mapReady) {
+    return;
+  }
+  const style = state.map.getStyle();
+  const layers = style?.layers ?? [];
+  for (const layer of layers) {
+    const layerId = layer?.id;
+    if (!layerId) {
+      continue;
+    }
+    const sourceLayer = layer['source-layer'];
+    const isBuilding = layerId.includes('building') || layerId.includes('3d-building') || (sourceLayer && sourceLayer.includes('building'));
+    if (layer.type === 'fill-extrusion' && isBuilding) {
+      if (state.map.getLayer(layerId)) {
+        state.map.removeLayer(layerId);
+      }
+    }
+  }
 }
 
 function renderSlot(entry) {
