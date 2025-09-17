@@ -224,7 +224,7 @@ function initMap() {
       url: "mapbox://mapbox.mapbox-terrain-dem-v1"
     });
     state.map.setTerrain({ source: "mapbox-dem", exaggeration: 1.2 });
-    state.map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.6 });
+    state.map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0 });
 
     state.map.addSource("stations-3d", {
       type: "geojson",
@@ -245,7 +245,7 @@ function initMap() {
         "fill-extrusion-base": 0,
         "fill-extrusion-color": "#38bdf8",
         "fill-extrusion-opacity": 0.82,
-        "fill-extrusion-vertical-gradient": true
+        "fill-extrusion-vertical-gradient": false
       }
     });
 
