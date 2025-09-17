@@ -115,7 +115,9 @@ const state = {
   currentMode: DEFAULT_MODE,
   viewMode: DEFAULT_VIEW_MODE,
   labelsVisible: true,
-  lastRenderedValues: new Map()
+  lastRenderedValues: new Map(),
+  flashActiveUntil: 0,
+  flashAnimationFrame: null
 };
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
@@ -554,6 +556,11 @@ async function updateTimelineForDate(date) {
     }
     state.currentTimeline = entries;
     state.lastRenderedValues = new Map();
+    if (state.flashAnimationFrame) {
+      cancelAnimationFrame(state.flashAnimationFrame);
+      state.flashAnimationFrame = null;
+    }
+    state.flashActiveUntil = 0;
     state.lastFittedDate = null;
     sliderEl.min = 0;
     sliderEl.max = entries.length - 1;
@@ -589,12 +596,14 @@ function goToTimelineIndex(index, { fromSlider = false } = {}) {
 function markStationChanges(entry) {
   const now = Date.now();
   const nextValues = new Map();
+  let anyChange = false;
   for (const station of entry.stations) {
     const key = station.id ?? `${station.lng},${station.lat}`;
     const previous = state.lastRenderedValues.get(key);
     const changed = previous !== undefined && previous.available !== station.available;
     if (changed) {
       station.changeTimestamp = now;
+      anyChange = true;
     } else if (previous?.changeTimestamp) {
       station.changeTimestamp = previous.changeTimestamp;
     } else {
@@ -604,6 +613,9 @@ function markStationChanges(entry) {
       available: station.available,
       changeTimestamp: station.changeTimestamp ?? 0
     });
+  }
+  if (anyChange) {
+    state.flashActiveUntil = Math.max(state.flashActiveUntil, now + FLASH_DURATION_MS);
   }
   state.lastRenderedValues = nextValues;
   if (entry.geojsonCache) {
@@ -617,18 +629,39 @@ function updateFlashPaint(now) {
     return;
   }
   const timeDeltaExpr = ["max", 0, ["-", now, ["coalesce", ["to-number", ["get", "changeTimestamp"]], 0]]];
-  const flashExpr = ["interpolate", ["linear"], timeDeltaExpr, 0, 1.2, FLASH_DURATION_MS, 0];
+  const flashExpr = ["interpolate", ["linear"], timeDeltaExpr, 0, 1.15, FLASH_DURATION_MS, 0];
 
   if (state.map.getLayer("stations-extrusion")) {
-    state.map.setPaintProperty("stations-extrusion", "fill-extrusion-emissive-strength", ["+", 0.1, ["*", flashExpr, 1.6]]);
-    state.map.setPaintProperty("stations-extrusion", "fill-extrusion-opacity", ["+", 0.7, ["*", flashExpr, 0.25]]);
+    try {
+      state.map.setPaintProperty("stations-extrusion", "fill-extrusion-opacity", ["clamp", ["+", 0.55, ["*", flashExpr, 0.35]], 0.55, 0.9]);
+    } catch (error) {
+      console.warn('fill-extrusion flash failed', error);
+    }
   }
   if (state.map.getLayer("stations-circle")) {
-    state.map.setPaintProperty("stations-circle", "circle-stroke-width", ["+", 1, ["*", flashExpr, 2.5]]);
-    state.map.setPaintProperty("stations-circle", "circle-opacity", ["+", 0.55, ["*", flashExpr, 0.35]]);
+    try {
+      state.map.setPaintProperty("stations-circle", "circle-stroke-width", ["+", 1, ["*", flashExpr, 2.5]]);
+      state.map.setPaintProperty("stations-circle", "circle-opacity", ["clamp", ["+", 0.55, ["*", flashExpr, 0.25]], 0.4, 0.8]);
+    } catch (error) {
+      console.warn('circle flash failed', error);
+    }
   }
 }
 
+
+function scheduleFlashDecay(now) {
+  if (state.flashAnimationFrame) {
+    cancelAnimationFrame(state.flashAnimationFrame);
+    state.flashAnimationFrame = null;
+  }
+  if (state.flashActiveUntil > now) {
+    state.flashAnimationFrame = window.requestAnimationFrame(() => {
+      const current = Date.now();
+      updateFlashPaint(current);
+      scheduleFlashDecay(current);
+    });
+  }
+}
 
 function setDefaultView() {
   if (!state.mapReady) {
@@ -659,6 +692,7 @@ function renderSlot(entry) {
   source3d.setData(polygons);
   source2d.setData(points);
   updateFlashPaint(now);
+  scheduleFlashDecay(now);
   labelEl.textContent = entry.label;
   if (state.lastFittedDate !== entry.date) {
     fitMapToFeatures(polygons);
