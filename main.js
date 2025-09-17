@@ -350,6 +350,8 @@ function initMap() {
           available,
           delta,
           cumulative,
+          absCumulative,
+          absCumulativeDisplay,
           metricLabel,
           valueDisplay,
           centerLng,
@@ -366,6 +368,7 @@ function initMap() {
               <div>${metricLabel}：${valueDisplay}</div>
               <div>即時車量：${formatNumber(available)}</div>
               <div>十分鐘變化：${formatSignedNumber(delta)}</div>
+              <div>絕對變化累積：${absCumulativeDisplay ?? formatNumber(absCumulative ?? 0)}</div>
               <div>當日累積：${formatSignedNumber(cumulative)}</div>
             </div>
           `)
@@ -624,6 +627,7 @@ function buildGeoJSON(entry, mode, geometryType) {
         delta: station.delta,
         cumulative: station.cumulative,
         absCumulative: station.absCumulative,
+        absCumulativeDisplay: formatNumber(station.absCumulative),
         value,
         valueDisplay: config.formatter(value),
         metricLabel: config.metricLabel,
