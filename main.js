@@ -695,29 +695,29 @@ function updateFlashPaint(now) {
     return;
   }
   const timeDeltaExpr = ["max", 0, ["-", now, ["coalesce", ["to-number", ["get", "changeTimestamp"]], 0]]];
-  const flashExpr = ["interpolate", ["linear"], timeDeltaExpr, 0, 0.85, FLASH_DURATION_MS, 0];
+  const flashExpr = ["interpolate", ["linear"], timeDeltaExpr, 0, 1, FLASH_DURATION_MS, 0];
 
   if (state.map.getLayer("stations-extrusion")) {
     try {
-      state.map.setPaintProperty("stations-extrusion", "fill-extrusion-emissive-strength", ["clamp", ["+", 0.15, ["*", flashExpr, 1.2]], 0.15, 1.5]);
-      state.map.setPaintProperty("stations-extrusion", "fill-extrusion-opacity", ["clamp", ["+", 0.6, ["*", flashExpr, 0.25]], 0.6, 0.95]);
+      state.map.setPaintProperty("stations-extrusion", "fill-extrusion-emissive-strength", ["clamp", ["+", 0.2, ["*", flashExpr, 1.8]], 0.2, 2]);
+      state.map.setPaintProperty("stations-extrusion", "fill-extrusion-opacity", ["clamp", ["+", 0.65, ["*", flashExpr, 0.4]], 0.65, 1]);
     } catch (error) {
       console.warn('fill-extrusion flash failed', error);
     }
   }
   if (state.map.getLayer("hex-extrusion") && state.hexModeEnabled) {
     try {
-      state.map.setPaintProperty("hex-extrusion", "fill-extrusion-emissive-strength", ["clamp", ["*", flashExpr, 1.2], 0, 1.5]);
-      state.map.setPaintProperty("hex-extrusion", "fill-extrusion-opacity", ["clamp", ["+", 0.6, ["*", flashExpr, 0.25]], 0.6, 0.95]);
+      state.map.setPaintProperty("hex-extrusion", "fill-extrusion-emissive-strength", ["clamp", ["*", flashExpr, 1.8], 0, 2]);
+      state.map.setPaintProperty("hex-extrusion", "fill-extrusion-opacity", ["clamp", ["+", 0.65, ["*", flashExpr, 0.4]], 0.65, 1]);
     } catch (error) {
       console.warn('hex flash failed', error);
     }
   }
   if (state.map.getLayer("stations-circle")) {
     try {
-      state.map.setPaintProperty("stations-circle", "circle-stroke-width", ["+", 1, ["*", flashExpr, 3]]);
-      state.map.setPaintProperty("stations-circle", "circle-stroke-color", ["interpolate", ["linear"], flashExpr, 0, "#0f172a", 0.85, "#ffffffcc"]);
-      state.map.setPaintProperty("stations-circle", "circle-opacity", ["clamp", ["+", 0.55, ["*", flashExpr, 0.25]], 0.55, 0.9]);
+      state.map.setPaintProperty("stations-circle", "circle-stroke-width", ["+", 1, ["*", flashExpr, 4]]);
+      state.map.setPaintProperty("stations-circle", "circle-stroke-color", ["interpolate", ["linear"], flashExpr, 0, "#0f172a", 1, "#ffffff"]);
+      state.map.setPaintProperty("stations-circle", "circle-opacity", ["clamp", ["+", 0.55, ["*", flashExpr, 0.4]], 0.55, 1]);
     } catch (error) {
       console.warn('circle flash failed', error);
     }
