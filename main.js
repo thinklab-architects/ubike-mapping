@@ -535,9 +535,10 @@ async function loadData() {
     state.cacheByDate.clear();
     populateDateSelect(state.manifest.map(item => item.date));
 
-    const firstDate = state.manifest[0]?.date;
-    if (firstDate) {
-      await updateTimelineForDate(firstDate);
+    // 預設載入「最後一天」的資料
+    const lastDate = state.manifest[state.manifest.length - 1]?.date;
+    if (lastDate) {
+      await updateTimelineForDate(lastDate);
     }
   } catch (error) {
     console.error(error);
