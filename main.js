@@ -12,12 +12,16 @@ const heightScaleValueEl = document.getElementById("height-scale-value");
 const speedSliderEl = document.getElementById("autoplay-speed");
 const speedValueEl = document.getElementById("autoplay-speed-value");
 const modeSelectEl = document.getElementById("mode-select");
+const legendContainer = document.querySelector(".legend");
 const legendLabelLow = document.getElementById("legend-label-low");
 const hexToggleEl = document.getElementById("hex-toggle");
 const hexSizeEl = document.getElementById("hex-size");
 const hexSizeValueEl = document.getElementById("hex-size-value");
 const legendLabelMid = document.getElementById("legend-label-mid");
 const legendLabelHigh = document.getElementById("legend-label-high");
+const legendDotLow = document.getElementById("legend-dot-low");
+const legendDotMid = document.getElementById("legend-dot-mid");
+const legendDotHigh = document.getElementById("legend-dot-high");
 
 const DEFAULT_HEIGHT_SCALE = Number(heightScaleEl?.value) || 6;
 const DEFAULT_AUTOPLAY_SECONDS = Number(speedSliderEl?.value) || 1.5;
@@ -36,7 +40,11 @@ const MODE_CONFIGS = {
     id: "raw",
     label: "即時車量",
     metricLabel: "可借車輛",
-    legend: { low: "低車量", mid: "中等", high: "高車量" },
+    legend: {
+      low: { label: "低車量", color: "#1e293b" },
+      mid: { label: "中等", color: "#f97316" },
+      high: { label: "高車量", color: "#22c55e" }
+    },
     supportsNegative: false,
     formatter: value => formatNumber(value),
     colorExpression: [
@@ -52,7 +60,11 @@ const MODE_CONFIGS = {
     id: "delta",
     label: "十分鐘變化量",
     metricLabel: "十分鐘變化",
-    legend: { low: "下降", mid: "持平", high: "上升" },
+    legend: {
+      low: { label: "下降", color: "#ef4444" },
+      mid: { label: "持平", color: "#4b5563" },
+      high: { label: "上升", color: "#15803d" }
+    },
     supportsNegative: true,
     formatter: value => formatSignedNumber(value),
     colorExpression: [
@@ -70,7 +82,11 @@ const MODE_CONFIGS = {
     id: "cumulative",
     label: "當日累積變化",
     metricLabel: "當日累積",
-    legend: { low: "累積下降", mid: "持平", high: "累積上升" },
+    legend: {
+      low: { label: "累積下降", color: "#ef4444" },
+      mid: { label: "持平", color: "#0f172a" },
+      high: { label: "累積上升", color: "#1d4ed8" }
+    },
     supportsNegative: true,
     formatter: value => formatSignedNumber(value),
     colorExpression: [
@@ -88,21 +104,26 @@ const MODE_CONFIGS = {
     id: "abs-total",
     label: "每日絕對變化累積",
     metricLabel: "絕對變化累積",
-    legend: { low: "低總變化", mid: "中等", high: "高總變化" },
+    legend: {
+      low: { label: "低總變化", color: "#30105f" },
+      mid: { label: "中等", color: "#3fb0b4" },
+      high: { label: "高總變化", color: "#f4f8b4" }
+    },
     supportsNegative: false,
     formatter: value => formatNumber(value),
     colorExpression: [
       "interpolate",
       ["linear"],
       ["get", "value"],
-      0, "#000000",
-      30, "#38bdf8",
-      60, "#0ea5e9",
-      90, "#1d4ed8"
+      0, "#24104f",
+      30, "#3e2d88",
+      60, "#345fa8",
+      90, "#3aa0b0",
+      130, "#75d7c0",
+      180, "#f4f8b4"
     ]
   }
 };
-
 const state = {
   manifest: [],
   cacheByDate: new Map(),
@@ -243,6 +264,7 @@ if (modeSelectEl) {
 updateHeightScaleLabel(state.heightScale);
 updateAutoplaySpeedLabel(state.autoplayIntervalMs / 1000);
 updateLegendLabels();
+mountLegendInMap();
 updatePlayButtonState();
 updateViewToggleButton();
 updateLabelToggleButton();
@@ -268,7 +290,12 @@ function initMap() {
     removeDefaultBuildingLayers();
     state.map.on("styledata", removeDefaultBuildingLayers);
 
-    state.map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0 });
+    state.map.setLight({
+      anchor: "viewport",
+      color: "#ffffff",
+      intensity: 0.75,
+      position: [1.25, 190, 30]
+    });
 
     state.map.addSource("stations-3d", {
       type: "geojson",
@@ -705,14 +732,6 @@ function updateFlashPaint(now) {
       console.warn('fill-extrusion flash failed', error);
     }
   }
-  if (state.map.getLayer("hex-extrusion") && state.hexModeEnabled) {
-    try {
-      state.map.setPaintProperty("hex-extrusion", "fill-extrusion-emissive-strength", ["clamp", ["*", flashExpr, 1.8], 0, 2]);
-      state.map.setPaintProperty("hex-extrusion", "fill-extrusion-opacity", ["clamp", ["+", 0.65, ["*", flashExpr, 0.4]], 0.65, 1]);
-    } catch (error) {
-      console.warn('hex flash failed', error);
-    }
-  }
   if (state.map.getLayer("stations-circle")) {
     try {
       state.map.setPaintProperty("stations-circle", "circle-stroke-width", ["+", 1, ["*", flashExpr, 4]]);
@@ -791,8 +810,9 @@ function ensureHexLayer() {
     paint: {
       "fill-extrusion-height": 0,
       "fill-extrusion-base": 0,
-      "fill-extrusion-opacity": 0.85,
-      "fill-extrusion-color": "#38bdf8"
+      "fill-extrusion-opacity": 1,
+      "fill-extrusion-color": "#38bdf8",
+      "fill-extrusion-emissive-strength": 0
     }
   });
 }
@@ -1081,6 +1101,8 @@ function applyHexStyle(config) {
   const magnitudeExpr = config.supportsNegative ? ["abs", valueExpr] : valueExpr;
   map.setPaintProperty("hex-extrusion", "fill-extrusion-height", ["*", magnitudeExpr, state.heightScale]);
   map.setPaintProperty("hex-extrusion", "fill-extrusion-color", config.colorExpression);
+  map.setPaintProperty("hex-extrusion", "fill-extrusion-opacity", 1);
+  map.setPaintProperty("hex-extrusion", "fill-extrusion-emissive-strength", 0);
 }
 
 function applyCircleStyle(config) {
@@ -1284,16 +1306,50 @@ function updateAutoplaySpeedLabel(seconds) {
   }
 }
 
+function mountLegendInMap() {
+  if (!legendContainer) {
+    return;
+  }
+  const mapEl = document.getElementById("map");
+  if (!mapEl) {
+    return;
+  }
+  if (legendContainer.parentElement !== mapEl) {
+    legendContainer.classList.add("legend--map");
+    mapEl.appendChild(legendContainer);
+  }
+}
+
 function updateLegendLabels() {
   const config = MODE_CONFIGS[state.currentMode] ?? MODE_CONFIGS.raw;
-  if (legendLabelLow) {
-    legendLabelLow.textContent = config.legend.low;
+  const legend = config.legend;
+  if (!legend) {
+    return;
   }
-  if (legendLabelMid) {
-    legendLabelMid.textContent = config.legend.mid;
+  if (legendContainer) {
+    legendContainer.dataset.mode = config.id ?? state.currentMode;
   }
-  if (legendLabelHigh) {
-    legendLabelHigh.textContent = config.legend.high;
+  applyLegendEntry(legend.low, legendLabelLow, legendDotLow);
+  applyLegendEntry(legend.mid, legendLabelMid, legendDotMid);
+  applyLegendEntry(legend.high, legendLabelHigh, legendDotHigh);
+}
+
+function applyLegendEntry(entry, labelEl, dotEl) {
+  if (!entry) {
+    if (labelEl) {
+      labelEl.textContent = "";
+    }
+    if (dotEl) {
+      dotEl.style.backgroundColor = "transparent";
+    }
+    return;
+  }
+  const legendEntry = typeof entry === "string" ? { label: entry } : entry;
+  if (labelEl && legendEntry.label) {
+    labelEl.textContent = legendEntry.label;
+  }
+  if (dotEl) {
+    dotEl.style.backgroundColor = legendEntry.color ?? "transparent";
   }
 }
 
@@ -1336,4 +1392,3 @@ function emptyGeoJSON() {
 
 initMap();
 loadData();
-
