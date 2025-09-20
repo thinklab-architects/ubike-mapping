@@ -14,6 +14,7 @@ const speedValueEl = document.getElementById("autoplay-speed-value");
 const modeSelectEl = document.getElementById("mode-select");
 const legendContainer = document.querySelector(".legend");
 const legendLabelLow = document.getElementById("legend-label-low");
+const transitToggleEl = document.getElementById("transit-toggle");
 const hexToggleEl = document.getElementById("hex-toggle");
 const hexSizeEl = document.getElementById("hex-size");
 const hexSizeValueEl = document.getElementById("hex-size-value");
@@ -145,7 +146,10 @@ const state = {
   flashActiveUntil: 0,
   flashAnimationFrame: null,
   hexModeEnabled: false,
-  hexCellSizeMeters: DEFAULT_HEX_SIZE_METERS
+  hexCellSizeMeters: DEFAULT_HEX_SIZE_METERS,
+  // Transit overlay state
+  transitVisible: false,
+  transitLayerIds: []
 };
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
@@ -174,6 +178,28 @@ if (viewToggleEl) {
     updateViewToggleButton();
     applyViewModeSettings();
   });
+}
+
+// Transit layers toggle
+if (transitToggleEl) {
+  transitToggleEl.addEventListener("click", () => {
+    state.transitVisible = !state.transitVisible;
+    updateTransitToggleButton();
+    updateTransitLayerVisibility();
+  });
+}
+
+function updateTransitToggleButton() {
+  if (!transitToggleEl) return;
+  if (state.transitVisible) {
+    transitToggleEl.classList.add("control-button--active");
+    transitToggleEl.textContent = "隱藏大眾運輸";
+    transitToggleEl.setAttribute("aria-pressed", "true");
+  } else {
+    transitToggleEl.classList.remove("control-button--active");
+    transitToggleEl.textContent = "顯示大眾運輸";
+    transitToggleEl.setAttribute("aria-pressed", "false");
+  }
 }
 
 if (labelToggleEl) {
@@ -268,6 +294,7 @@ mountLegendInMap();
 updatePlayButtonState();
 updateViewToggleButton();
 updateLabelToggleButton();
+updateTransitToggleButton();
 
 function initMap() {
   state.map = new mapboxgl.Map({
@@ -288,7 +315,12 @@ function initMap() {
     state.mapReady = true;
 
     removeDefaultBuildingLayers();
-    state.map.on("styledata", removeDefaultBuildingLayers);
+    state.map.on("styledata", () => {
+      removeDefaultBuildingLayers();
+      // Re-collect transit layers when the style changes
+      collectTransitLayers();
+      updateTransitLayerVisibility();
+    });
 
     state.map.setLight({
       anchor: "viewport",
@@ -482,6 +514,8 @@ function initMap() {
     applyViewModeSettings({ animate: false });
     applyLabelVisibility();
     updateHeatmapVisibility();
+    collectTransitLayers();
+    updateTransitLayerVisibility();
     refreshCurrentView();
   });
 }
@@ -683,8 +717,8 @@ async function updateTimelineForDate(date) {
       state.flashAnimationFrame = null;
     }
     state.flashActiveUntil = 0;
-    // On first load, keep the initial camera. For later date changes, allow one fit.
-    state.lastFittedDate = state.currentDate ? null : date;
+    // 保持視角：切換日期時不改變中心/縮放/角度
+    state.lastFittedDate = date;
     sliderEl.min = 0;
     sliderEl.max = entries.length - 1;
     sliderEl.value = 0;
@@ -1213,6 +1247,43 @@ function updateHeatmapVisibility() {
   if (state.map.getLayer("stations-heatmap-positive")) {
     state.map.setLayoutProperty("stations-heatmap-positive", "visibility", visibility);
     state.map.setPaintProperty("stations-heatmap-positive", "heatmap-opacity", opacity);
+  }
+}
+
+// Collect and toggle transit layers from the base style
+function collectTransitLayers() {
+  if (!state.mapReady) {
+    state.transitLayerIds = [];
+    return;
+  }
+  const style = state.map.getStyle();
+  const layers = Array.isArray(style?.layers) ? style.layers : [];
+  const result = [];
+  const patterns = [/transit/i, /rail/i, /subway/i, /metro/i, /light.?rail/i, /tram/i, /railway/i, /station/i];
+  for (const layer of layers) {
+    const id = layer?.id || "";
+    if (!id) continue;
+    if (id.startsWith("stations-") || id === "hex-extrusion") continue;
+    const srcLayer = layer["source-layer"] || "";
+    const text = `${id} ${srcLayer}`;
+    if (patterns.some(p => p.test(text))) {
+      result.push(id);
+    }
+  }
+  state.transitLayerIds = result;
+}
+
+function updateTransitLayerVisibility() {
+  if (!state.mapReady) return;
+  const vis = state.transitVisible ? "visible" : "none";
+  for (const id of state.transitLayerIds) {
+    if (state.map.getLayer(id)) {
+      try {
+        state.map.setLayoutProperty(id, "visibility", vis);
+      } catch (err) {
+        // ignore
+      }
+    }
   }
 }
 
