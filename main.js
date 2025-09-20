@@ -29,7 +29,7 @@ const DEFAULT_AUTOPLAY_INTERVAL_MS = DEFAULT_AUTOPLAY_SECONDS * 1000;
 const DEFAULT_MODE = modeSelectEl?.value || "raw";
 const DEFAULT_VIEW_MODE = "3d";
 const DEFAULT_CENTER = [120.302, 22.639];
-const DEFAULT_ZOOM = 12.8;
+const DEFAULT_ZOOM = 15;
 const DEFAULT_PITCH = 45;
 const DEFAULT_BEARING = -15;
 const FLASH_DURATION_MS = 900;
@@ -601,16 +601,45 @@ function parseCsv(text, date) {
 }
 
 function populateDateSelect(dates) {
-  dateSelectEl.innerHTML = "";
-  for (const date of dates) {
-    const option = document.createElement("option");
-    option.value = date;
-    option.textContent = date;
-    dateSelectEl.appendChild(option);
+  // Expect dates as array of YYYY-MM-DD strings
+  if (!dateSelectEl) return;
+  const unique = Array.from(new Set(dates)).sort();
+  const available = new Set(unique);
+  // Configure calendar input boundaries
+  dateSelectEl.min = unique[0] ?? "";
+  dateSelectEl.max = unique[unique.length - 1] ?? "";
+
+  // Keep a resolver for nearest available date in range
+  function resolveToAvailable(value) {
+    if (available.has(value)) return value;
+    // find nearest date not after max/min
+    let best = null;
+    let bestDiff = Infinity;
+    const target = new Date(value);
+    for (const d of unique) {
+      const diff = Math.abs(new Date(d) - target);
+      if (diff < bestDiff) {
+        best = d;
+        bestDiff = diff;
+      }
+    }
+    return best ?? unique[0];
   }
-  dateSelectEl.addEventListener("change", async event => {
-    await updateTimelineForDate(event.target.value);
-  });
+
+  // Set initial display value if empty
+  if (!dateSelectEl.value && unique[0]) {
+    dateSelectEl.value = unique[0];
+  }
+
+  dateSelectEl.onchange = async (event) => {
+    const raw = event.target.value;
+    const chosen = resolveToAvailable(raw);
+    if (chosen !== raw) {
+      // snap to an available date
+      dateSelectEl.value = chosen;
+    }
+    await updateTimelineForDate(chosen);
+  };
 }
 
 async function loadEntriesForDate(date) {
@@ -654,12 +683,13 @@ async function updateTimelineForDate(date) {
       state.flashAnimationFrame = null;
     }
     state.flashActiveUntil = 0;
-    state.lastFittedDate = null;
+    // On first load, keep the initial camera. For later date changes, allow one fit.
+    state.lastFittedDate = state.currentDate ? null : date;
     sliderEl.min = 0;
     sliderEl.max = entries.length - 1;
     sliderEl.value = 0;
     sliderEl.disabled = false;
-    setDefaultView();
+    // Do not reset camera when switching date; keep user angle.
     goToTimelineIndex(0, { fromSlider: true });
     updatePlayButtonState();
   } catch (error) {
@@ -1040,7 +1070,8 @@ function fitMapToFeatures(geojson) {
   }, new mapboxgl.LngLatBounds());
 
   if (!bounds.isEmpty()) {
-    state.map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800, pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING });
+    // Preserve current pitch/bearing so date changes won't alter viewing angle
+    state.map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 });
   }
 }
 
