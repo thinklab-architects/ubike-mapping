@@ -722,10 +722,13 @@ async function updateTimelineForDate(date) {
     state.lastFittedDate = date;
     sliderEl.min = 0;
     sliderEl.max = entries.length - 1;
-    sliderEl.value = 0;
+    const __prevIdx = Number(sliderEl.value);
+    const __safePrev = Number.isFinite(__prevIdx) ? __prevIdx : 0;
+    const __targetIdx = Math.max(0, Math.min(__safePrev, entries.length - 1));
+    sliderEl.value = String(__targetIdx);
     sliderEl.disabled = false;
-    // Do not reset camera when switching date; keep user angle.
-    goToTimelineIndex(0, { fromSlider: true });
+    // Keep same time slot; do not change camera.
+    goToTimelineIndex(__targetIdx, { fromSlider: true });
     updatePlayButtonState();
   } catch (error) {
     console.error(error);
