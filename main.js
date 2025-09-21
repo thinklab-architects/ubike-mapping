@@ -347,7 +347,7 @@ function initMap() {
       // When style changes (e.g., switch light/dark), re-ensure our sources/layers
       ensureCoreLayers();
       applyExtrusionStyle();
-      applyViewModeSettings({ animate: false });
+      // Preserve current camera on mode/style changes — do not reset pitch/bearing here
       applyLabelVisibility();
       updateHexLayerVisibility?.();
       // Re-collect transit layers and sync visibility
