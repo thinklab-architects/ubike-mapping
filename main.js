@@ -956,6 +956,10 @@ function updateHexGrid(entry) {
 }
 
 function renderSlot(entry) {
+  // Update timeline label immediately, even if map isn't ready yet
+  if (labelEl) {
+    labelEl.textContent = entry.label;
+  }
   if (!state.mapReady || !state.map?.isStyleLoaded()) {
     return;
   }
@@ -974,7 +978,6 @@ function renderSlot(entry) {
   }
   updateFlashPaint(now);
   scheduleFlashDecay(now);
-  labelEl.textContent = entry.label;
   if (state.lastFittedDate !== entry.date) {
     fitMapToFeatures(polygons);
     state.lastFittedDate = entry.date;
