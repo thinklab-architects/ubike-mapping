@@ -757,29 +757,8 @@ function markStationChanges(entry) {
 }
 
 function updateFlashPaint(now) {
-  if (!state.mapReady) {
-    return;
-  }
-  const timeDeltaExpr = ["max", 0, ["-", now, ["coalesce", ["to-number", ["get", "changeTimestamp"]], 0]]];
-  const flashExpr = ["interpolate", ["linear"], timeDeltaExpr, 0, 1, FLASH_DURATION_MS, 0];
-
-  if (state.map.getLayer("stations-extrusion")) {
-    try {
-      state.map.setPaintProperty("stations-extrusion", "fill-extrusion-emissive-strength", ["clamp", ["+", 0.2, ["*", flashExpr, 1.8]], 0.2, 2]);
-      state.map.setPaintProperty("stations-extrusion", "fill-extrusion-opacity", ["clamp", ["+", 0.65, ["*", flashExpr, 0.4]], 0.65, 1]);
-    } catch (error) {
-      console.warn('fill-extrusion flash failed', error);
-    }
-  }
-  if (state.map.getLayer("stations-circle")) {
-    try {
-      state.map.setPaintProperty("stations-circle", "circle-stroke-width", ["+", 1, ["*", flashExpr, 4]]);
-      state.map.setPaintProperty("stations-circle", "circle-stroke-color", ["interpolate", ["linear"], flashExpr, 0, "#0f172a", 1, "#ffffff"]);
-      state.map.setPaintProperty("stations-circle", "circle-opacity", ["clamp", ["+", 0.55, ["*", flashExpr, 0.5]], 0.55, 1]);
-    } catch (error) {
-      console.warn('circle flash failed', error);
-    }
-  }
+  // Glow/flash disabled; keep static styling.
+  return;
 }
 
 
