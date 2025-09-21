@@ -29,6 +29,8 @@ const DEFAULT_AUTOPLAY_SECONDS = Number(speedSliderEl?.value) || 1.5;
 const DEFAULT_AUTOPLAY_INTERVAL_MS = DEFAULT_AUTOPLAY_SECONDS * 1000;
 const DEFAULT_MODE = modeSelectEl?.value || "raw";
 const DEFAULT_VIEW_MODE = "3d";
+const MAP_STYLE_LIGHT = "mapbox://styles/mapbox/light-v11";
+const MAP_STYLE_DARK = "mapbox://styles/mapbox/dark-v11";
 const DEFAULT_CENTER = [120.302, 22.639];
 const DEFAULT_ZOOM = 15;
 const DEFAULT_PITCH = 45;
@@ -153,7 +155,8 @@ const state = {
   hexCellSizeMeters: DEFAULT_HEX_SIZE_METERS,
   // Transit overlay state
   transitVisible: false,
-  transitLayerIds: []
+  transitLayerIds: [],
+  currentBaseStyleUri: null
 };
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
@@ -229,7 +232,6 @@ if (hexToggleEl) {
     if (hexSizeEl) {
       hexSizeEl.disabled = !state.hexModeEnabled;
     }
-    updateWhiteOverlayVisibility();
   });
 }
 
@@ -286,10 +288,11 @@ if (modeSelectEl) {
     state.currentMode = nextMode;
     stopAutoplay();
     updateLegendLabels();
+    // Switch basemap to light for delta/cumulative, dark otherwise
+    applyBaseStyleForCurrentMode();
     applyExtrusionStyle();
     state.hexCache.clear();
     refreshCurrentView();
-    updateWhiteOverlayVisibility();
   });
 }
 
@@ -302,15 +305,33 @@ updateViewToggleButton();
 updateLabelToggleButton();
 updateTransitToggleButton();
 
+function getBaseStyleForMode(mode) {
+  return (mode === "delta" || mode === "cumulative") ? MAP_STYLE_LIGHT : MAP_STYLE_DARK;
+}
+
+function applyBaseStyleForCurrentMode() {
+  if (!state.map) return;
+  const desired = getBaseStyleForMode(state.currentMode);
+  if (state.currentBaseStyleUri !== desired) {
+    state.currentBaseStyleUri = desired;
+    try {
+      state.map.setStyle(desired, { diff: true });
+    } catch (e) {
+      console.warn("setStyle failed", e);
+    }
+  }
+}
+
 function initMap() {
   state.map = new mapboxgl.Map({
     container: "map",
-    style: "mapbox://styles/mapbox/dark-v11",
+    style: getBaseStyleForMode(state.currentMode),
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
     pitch: DEFAULT_PITCH,
     bearing: DEFAULT_BEARING
   });
+  state.currentBaseStyleUri = getBaseStyleForMode(state.currentMode);
 
   state.popup = new mapboxgl.Popup({
     closeButton: false,
@@ -326,8 +347,6 @@ function initMap() {
       // Re-collect transit layers when the style changes
       collectTransitLayers();
       updateTransitLayerVisibility();
-      ensureWhiteOverlayLayer();
-      updateWhiteOverlayVisibility();
     });
 
     state.map.setLight({
@@ -346,9 +365,6 @@ function initMap() {
       type: "geojson",
       data: emptyGeoJSON()
     });
-
-    // White overlay background for hex modes where needed
-    ensureWhiteOverlayLayer();
 
     state.map.addLayer({
       id: "stations-extrusion",
@@ -527,7 +543,6 @@ function initMap() {
     updateHeatmapVisibility();
     collectTransitLayers();
     updateTransitLayerVisibility();
-    updateWhiteOverlayVisibility();
     refreshCurrentView();
   });
 }
@@ -1263,60 +1278,6 @@ function updateHeatmapVisibility() {
   if (state.map.getLayer("stations-heatmap-positive")) {
     state.map.setLayoutProperty("stations-heatmap-positive", "visibility", visibility);
     state.map.setPaintProperty("stations-heatmap-positive", "heatmap-opacity", opacity);
-  }
-}
-
-function ensureWhiteOverlayLayer() {
-  if (!state.mapReady) return;
-  const map = state.map;
-  if (!map.getSource('white-overlay')) {
-    const poly = {
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          geometry: {
-            type: 'Polygon',
-            coordinates: [[
-              [-180, -85],
-              [-180, 85],
-              [180, 85],
-              [180, -85],
-              [-180, -85]
-            ]]
-          },
-          properties: {}
-        }
-      ]
-    };
-    map.addSource('white-overlay', { type: 'geojson', data: poly });
-  }
-  if (!map.getLayer('white-overlay')) {
-    map.addLayer({
-      id: 'white-overlay',
-      type: 'fill',
-      source: 'white-overlay',
-      layout: { visibility: 'none' },
-      // Grey‑white paper style base
-      paint: {
-        'fill-color': '#f3f4f6',
-        'fill-opacity': 1,
-        'fill-outline-color': '#e5e7eb'
-      }
-    });
-    // Place below our data layers so extrusions/circles/labels show above
-    if (map.getLayer('stations-extrusion')) {
-      try { map.moveLayer('white-overlay', 'stations-extrusion'); } catch {}
-    }
-  }
-}
-
-function updateWhiteOverlayVisibility() {
-  if (!state.mapReady) return;
-  const map = state.map;
-  const shouldShow = state.hexModeEnabled && (state.currentMode === 'delta' || state.currentMode === 'cumulative');
-  if (map.getLayer('white-overlay')) {
-    map.setLayoutProperty('white-overlay', 'visibility', shouldShow ? 'visible' : 'none');
   }
 }
 
