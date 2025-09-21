@@ -344,9 +344,17 @@ function initMap() {
     removeDefaultBuildingLayers();
     state.map.on("styledata", () => {
       removeDefaultBuildingLayers();
-      // Re-collect transit layers when the style changes
+      // When style changes (e.g., switch light/dark), re-ensure our sources/layers
+      ensureCoreLayers();
+      applyExtrusionStyle();
+      applyViewModeSettings({ animate: false });
+      applyLabelVisibility();
+      updateHexLayerVisibility?.();
+      // Re-collect transit layers and sync visibility
       collectTransitLayers();
       updateTransitLayerVisibility();
+      // Re-render current slot data
+      refreshCurrentView();
     });
 
     state.map.setLight({
@@ -833,6 +841,78 @@ function ensureHexLayer() {
       "fill-extrusion-emissive-strength": 0
     }
   });
+}
+
+function ensureCoreLayers() {
+  if (!state.mapReady) return;
+  const map = state.map;
+
+  // Data sources
+  if (!map.getSource("stations-3d")) {
+    map.addSource("stations-3d", { type: "geojson", data: emptyGeoJSON() });
+  }
+  if (!map.getSource("stations-2d")) {
+    map.addSource("stations-2d", { type: "geojson", data: emptyGeoJSON() });
+  }
+
+  // 3D extrusions layer
+  if (!map.getLayer("stations-extrusion")) {
+    map.addLayer({
+      id: "stations-extrusion",
+      type: "fill-extrusion",
+      source: "stations-3d",
+      paint: {
+        "fill-extrusion-height": 0,
+        "fill-extrusion-base": 0,
+        "fill-extrusion-color": "#38bdf8",
+        "fill-extrusion-opacity": 0.82,
+        "fill-extrusion-vertical-gradient": false
+      }
+    });
+  }
+
+  // 2D circles layer
+  if (!map.getLayer("stations-circle")) {
+    map.addLayer({
+      id: "stations-circle",
+      type: "circle",
+      source: "stations-2d",
+      layout: { visibility: "none" },
+      paint: {
+        "circle-radius": 4,
+        "circle-color": "#38bdf8",
+        "circle-opacity": 0.85,
+        "circle-stroke-color": "#0f172a",
+        "circle-stroke-width": 1
+      }
+    });
+  }
+
+  // Labels layer
+  if (!map.getLayer("stations-labels")) {
+    map.addLayer({
+      id: "stations-labels",
+      type: "symbol",
+      source: "stations-2d",
+      layout: {
+        "text-field": ["get", "labelValue"],
+        "text-size": 12,
+        "text-font": ["DIN Pro Medium", "Arial Unicode MS Bold"],
+        "symbol-placement": "point",
+        "text-offset": [0, 0.6]
+      },
+      paint: {
+        "text-color": "#0f172a",
+        "text-halo-color": "rgba(255,255,255,0.85)",
+        "text-halo-width": 1.2
+      }
+    });
+  }
+
+  // Hex layer (hidden by default) if needed
+  if (!map.getSource("hex-grid") || !map.getLayer("hex-extrusion")) {
+    try { ensureHexLayer(); } catch {}
+  }
 }
 
 function updateHexToggleButton() {
