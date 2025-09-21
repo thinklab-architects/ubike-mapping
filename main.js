@@ -229,6 +229,7 @@ if (hexToggleEl) {
     if (hexSizeEl) {
       hexSizeEl.disabled = !state.hexModeEnabled;
     }
+    updateWhiteOverlayVisibility();
   });
 }
 
@@ -288,6 +289,7 @@ if (modeSelectEl) {
     applyExtrusionStyle();
     state.hexCache.clear();
     refreshCurrentView();
+    updateWhiteOverlayVisibility();
   });
 }
 
@@ -324,6 +326,8 @@ function initMap() {
       // Re-collect transit layers when the style changes
       collectTransitLayers();
       updateTransitLayerVisibility();
+      ensureWhiteOverlayLayer();
+      updateWhiteOverlayVisibility();
     });
 
     state.map.setLight({
@@ -342,6 +346,9 @@ function initMap() {
       type: "geojson",
       data: emptyGeoJSON()
     });
+
+    // White overlay background for hex modes where needed
+    ensureWhiteOverlayLayer();
 
     state.map.addLayer({
       id: "stations-extrusion",
@@ -520,6 +527,7 @@ function initMap() {
     updateHeatmapVisibility();
     collectTransitLayers();
     updateTransitLayerVisibility();
+    updateWhiteOverlayVisibility();
     refreshCurrentView();
   });
 }
@@ -1255,6 +1263,55 @@ function updateHeatmapVisibility() {
   if (state.map.getLayer("stations-heatmap-positive")) {
     state.map.setLayoutProperty("stations-heatmap-positive", "visibility", visibility);
     state.map.setPaintProperty("stations-heatmap-positive", "heatmap-opacity", opacity);
+  }
+}
+
+function ensureWhiteOverlayLayer() {
+  if (!state.mapReady) return;
+  const map = state.map;
+  if (!map.getSource('white-overlay')) {
+    const poly = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[
+              [-180, -85],
+              [-180, 85],
+              [180, 85],
+              [180, -85],
+              [-180, -85]
+            ]]
+          },
+          properties: {}
+        }
+      ]
+    };
+    map.addSource('white-overlay', { type: 'geojson', data: poly });
+  }
+  if (!map.getLayer('white-overlay')) {
+    map.addLayer({
+      id: 'white-overlay',
+      type: 'fill',
+      source: 'white-overlay',
+      layout: { visibility: 'none' },
+      paint: { 'fill-color': '#ffffff', 'fill-opacity': 1 }
+    });
+    // Place below our data layers so extrusions/circles/labels show above
+    if (map.getLayer('stations-extrusion')) {
+      try { map.moveLayer('white-overlay', 'stations-extrusion'); } catch {}
+    }
+  }
+}
+
+function updateWhiteOverlayVisibility() {
+  if (!state.mapReady) return;
+  const map = state.map;
+  const shouldShow = state.hexModeEnabled && (state.currentMode === 'delta' || state.currentMode === 'cumulative');
+  if (map.getLayer('white-overlay')) {
+    map.setLayoutProperty('white-overlay', 'visibility', shouldShow ? 'visible' : 'none');
   }
 }
 
