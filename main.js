@@ -1297,7 +1297,12 @@ function ensureWhiteOverlayLayer() {
       type: 'fill',
       source: 'white-overlay',
       layout: { visibility: 'none' },
-      paint: { 'fill-color': '#ffffff', 'fill-opacity': 1 }
+      // Grey‑white paper style base
+      paint: {
+        'fill-color': '#f3f4f6',
+        'fill-opacity': 1,
+        'fill-outline-color': '#e5e7eb'
+      }
     });
     // Place below our data layers so extrusions/circles/labels show above
     if (map.getLayer('stations-extrusion')) {
