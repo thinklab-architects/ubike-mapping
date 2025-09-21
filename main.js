@@ -62,9 +62,9 @@ const MODE_CONFIGS = {
     label: "十分鐘變化量",
     metricLabel: "十分鐘變化",
     legend: {
-      low: { label: "下降", color: "#ef4444" },
-      mid: { label: "持平", color: "#4b5563" },
-      high: { label: "上升", color: "#15803d" }
+      low: { label: "下降", color: "#16a34a" },
+      mid: { label: "持平", color: "#fce7f3" },
+      high: { label: "上升", color: "#be185d" }
     },
     supportsNegative: true,
     formatter: value => formatSignedNumber(value),
@@ -72,11 +72,13 @@ const MODE_CONFIGS = {
       "interpolate",
       ["linear"],
       ["get", "value"],
-      -40, "#ef4444",
-      -10, "#f87171",
-      0, "#000000",
-      10, "#22c55e",
-      40, "#15803d"
+      -40, "#15803d",
+      -15, "#84cc16",
+      -5,  "#d9f99d",
+      0,   "#fce7f3",
+      5,   "#f9a8d4",
+      15,  "#ec4899",
+      40,  "#be185d"
     ]
   },
   cumulative: {
@@ -84,9 +86,9 @@ const MODE_CONFIGS = {
     label: "當日累積變化",
     metricLabel: "當日累積",
     legend: {
-      low: { label: "累積下降", color: "#ef4444" },
-      mid: { label: "持平", color: "#0f172a" },
-      high: { label: "累積上升", color: "#1d4ed8" }
+      low: { label: "累積下降", color: "#16a34a" },
+      mid: { label: "持平", color: "#fce7f3" },
+      high: { label: "累積上升", color: "#be185d" }
     },
     supportsNegative: true,
     formatter: value => formatSignedNumber(value),
@@ -94,11 +96,13 @@ const MODE_CONFIGS = {
       "interpolate",
       ["linear"],
       ["get", "value"],
-      -80, "#ef4444",
-      -20, "#f87171",
-      0, "#000000",
-      40, "#38bdf8",
-      80, "#1d4ed8"
+      -80, "#15803d",
+      -30, "#84cc16",
+      -10, "#d9f99d",
+      0,   "#fce7f3",
+      10,  "#f9a8d4",
+      30,  "#ec4899",
+      80,  "#be185d"
     ]
   },
   "abs-total": {
