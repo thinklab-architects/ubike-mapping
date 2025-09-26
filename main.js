@@ -65,7 +65,7 @@ const MODE_CONFIGS = {
     metricLabel: "十分鐘變化",
     legend: {
       low: { label: "下降", color: "#16a34a" },
-      mid: { label: "持平", color: "#fce7f3" },
+      mid: { label: "持平", color: "#ffffffff" },
       high: { label: "上升", color: "#be185d" }
     },
     supportsNegative: true,
@@ -77,7 +77,7 @@ const MODE_CONFIGS = {
       -40, "#15803d",
       -15, "#84cc16",
       -5,  "#d9f99d",
-      0,   "#fce7f3",
+      0,   "#ffffffff",
       5,   "#f9a8d4",
       15,  "#ec4899",
       40,  "#be185d"
@@ -89,7 +89,7 @@ const MODE_CONFIGS = {
     metricLabel: "當日累積",
     legend: {
       low: { label: "累積下降", color: "#16a34a" },
-      mid: { label: "持平", color: "#fce7f3" },
+      mid: { label: "持平", color: "#ffffffff" },
       high: { label: "累積上升", color: "#be185d" }
     },
     supportsNegative: true,
@@ -101,7 +101,7 @@ const MODE_CONFIGS = {
       -80, "#15803d",
       -30, "#84cc16",
       -10, "#d9f99d",
-      0,   "#fce7f3",
+      0,   "#ffffffff",
       10,  "#f9a8d4",
       30,  "#ec4899",
       80,  "#be185d"
