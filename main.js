@@ -952,7 +952,7 @@ function updateHexLayerVisibility() {
       state.map.setLayoutProperty("stations-circle", "visibility", "none");
     }
   } else {
-    applyViewModeSettings();
+    applyViewModeSettings({ animate: false, preserveCamera: true });
     updateHeatmapVisibility();
   }
 }
@@ -1286,7 +1286,7 @@ function updateLabelToggleButton() {
   labelToggleEl.setAttribute("aria-pressed", state.labelsVisible ? "true" : "false");
 }
 
-function applyViewModeSettings({ animate = true } = {}) {
+function applyViewModeSettings({ animate = true, preserveCamera = false } = {}) {
   if (!state.mapReady) {
     return;
   }
@@ -1304,13 +1304,15 @@ function applyViewModeSettings({ animate = true } = {}) {
     state.map.setLayoutProperty("stations-labels", "text-offset", is3D ? [0, 1.2] : [0, 0.6]);
   }
 
-  const pitch = is3D ? DEFAULT_PITCH : 0;
-  const bearing = is3D ? DEFAULT_BEARING : 0;
-  if (animate) {
-    state.map.easeTo({ pitch, bearing, duration: 600 });
-  } else {
-    state.map.setPitch(pitch);
-    state.map.setBearing(bearing);
+  if (!preserveCamera) {
+    const pitch = is3D ? DEFAULT_PITCH : 0;
+    const bearing = is3D ? DEFAULT_BEARING : 0;
+    if (animate) {
+      state.map.easeTo({ pitch, bearing, duration: 600 });
+    } else {
+      state.map.setPitch(pitch);
+      state.map.setBearing(bearing);
+    }
   }
 }
 
